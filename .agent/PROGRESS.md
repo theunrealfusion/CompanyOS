@@ -15,5 +15,10 @@
   - Reassign reporting lines with dynamic edge connections.
   - Drag and drop repositioning.
   - Reconfigure or remove agents.
-  - Persistent hierarchy saving to PostgreSQL.
+  - Persistent hierarchy saving to database.
+- Integrated Cloud MongoDB as default database:
+  - Built async MongoDB manager using motor and pymongo with dnspython (supporting mongodb+srv:// Atlas URIs).
+  - Configured to use Cloud MongoDB instance by default without needing MongoDB in docker-compose.
+  - Added Cloud MongoDB Atlas configuration panel & live connection tester to Settings view.
+  - Graceful zero-downtime offline cache fallback to guarantee 100% continuous uptime.
 - Updated CompanyOS CLI with settings management.
