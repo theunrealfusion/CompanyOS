@@ -1,0 +1,16 @@
+fastapi
+uvicorn
+pydantic>=2.0.0
+pydantic-settings
+motor
+beanie
+nats-py
+redis
+httpx
+pytest
+pytest-asyncio
+black
+isort
+flake8
+mypy
+python-dotenv
