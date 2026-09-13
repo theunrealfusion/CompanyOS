@@ -1,0 +1,16 @@
+# Global Owners
+*       @theunrealfusion
+
+# Monorepo Applications
+/apps/api/        @theunrealfusion
+/apps/web/        @theunrealfusion
+/apps/worker/     @theunrealfusion
+
+# Core Packages & SDKs
+/packages/        @theunrealfusion
+
+# Integration Adapters
+/adapters/        @theunrealfusion
+
+# GitHub Workflows & Templates
+/.github/         @theunrealfusion

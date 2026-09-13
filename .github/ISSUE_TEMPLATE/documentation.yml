@@ -1,0 +1,21 @@
+name: 📚 Documentation Improvement
+description: Suggest fixes or improvements to CompanyOS documentation
+title: "[Docs]: "
+labels: ["documentation"]
+body:
+  - type: textarea
+    id: issue
+    attributes:
+      label: Documentation Issue / Gap
+      description: What page, guide, or docstring needs improvement?
+      placeholder: The quickstart guide in README.md is missing step X...
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Proposed Changes
+      description: Describe the changes or additions you would like to see.
+    validations:
+      required: true

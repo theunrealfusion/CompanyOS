@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Community Discussions
+    url: https://github.com/theunrealfusion/CompanyOS/discussions
+    about: Ask questions, share ideas, and discuss CompanyOS with the community.
+  - name: 🛡️ Security Vulnerabilities
+    url: https://github.com/theunrealfusion/CompanyOS/blob/main/SECURITY.md
+    about: Report security issues confidentially according to our security policy.

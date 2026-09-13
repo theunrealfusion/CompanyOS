@@ -1,0 +1,53 @@
+name: ✨ Feature Request / Enhancement
+description: Suggest a new feature, adapter, or enhancement for CompanyOS
+title: "[Feat]: "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for suggesting a feature! We welcome community proposals to make CompanyOS more powerful.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Is your feature request related to a problem?
+      description: A clear description of what the problem or limitation is.
+      placeholder: I am always frustrated when...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution / Feature Description
+      description: Describe the solution you'd like to see added to CompanyOS.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Describe any alternative solutions or features you've considered.
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Feature Scope
+      options:
+        - Core Architecture / Engine (`packages/core`)
+        - Agent Runtimes & Integrations (`adapters/`)
+        - Command Center UI (`apps/web`)
+        - API & Gateway Endpoints (`apps/api`)
+        - CLI Tooling (`packages/cli`)
+        - Documentation / Examples
+    validations:
+      required: true
+
+  - type: checkbox
+    id: willing_to_contribute
+    attributes:
+      label: Contribution
+      options:
+        - label: I would be willing to submit a PR to implement this feature!
