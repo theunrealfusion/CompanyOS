@@ -15,11 +15,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from apps.api.routers import agents, companies, ws, mongodb_router
-
+from apps.api.routers import agents, companies, ws, mongodb_router, approvals, metrics, models_router, system_router
+ 
 app.include_router(agents.router, prefix="/api/v1")
 app.include_router(companies.router, prefix="/api/v1")
 app.include_router(mongodb_router.router, prefix="/api/v1")
+app.include_router(approvals.router, prefix="/api/v1")
+app.include_router(metrics.router, prefix="/api/v1")
+app.include_router(models_router.router, prefix="/api/v1")
+app.include_router(system_router.router, prefix="/api/v1")
 app.include_router(ws.router)
 
 @app.get("/")

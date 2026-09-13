@@ -19,6 +19,8 @@ import AgentDrawer from "./components/AgentDrawer";
 import TaskModal from "./components/TaskModal";
 import OrgRestructureModal from "./components/OrgRestructureModal";
 import EventsFeed, { EventLog } from "./components/EventsFeed";
+import RequiredSetupModal from "./components/RequiredSetupModal";
+import RequiredSetupBanner from "./components/RequiredSetupBanner";
 import AgentsView from "./components/views/AgentsView";
 import WorkflowsView from "./components/views/WorkflowsView";
 import MetricsView from "./components/views/MetricsView";
@@ -40,7 +42,9 @@ import {
   RefreshCw,
   GitBranch,
   UserPlus,
-  Save
+  Save,
+  Database,
+  AlertTriangle
 } from "lucide-react";
 
 type NavTab = "command-center" | "agents" | "workflows" | "metrics" | "settings";
@@ -81,6 +85,38 @@ export default function Home() {
   const [isPaused, setIsPaused] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
   const [companyId, setCompanyId] = useState<string>("ae5ecdc5-0a51-4589-98d6-fe7a4362d559");
+
+  // Required Setup State (MongoDB Atlas requirement)
+  const [setupModalOpen, setSetupModalOpen] = useState(false);
+  const [isMongoConnected, setIsMongoConnected] = useState(true); // default true while checking to prevent flash
+  const [mongoLatency, setMongoLatency] = useState<number | null>(null);
+  const [setupChecked, setSetupChecked] = useState(false);
+
+  // Check required setup status from backend
+  const checkSetupStatus = useCallback(async () => {
+    try {
+      const host = window.location.hostname || "localhost";
+      const res = await fetch(`http://${host}:8003/api/v1/system/setup-status`);
+      if (res.ok) {
+        const data = await res.json();
+        const connected = !!data.mongodb?.is_connected;
+        setIsMongoConnected(connected);
+        setMongoLatency(data.mongodb?.latency_ms ?? null);
+        if (!connected) {
+          // Required setup incomplete: Prompt user to complete setup first
+          setSetupModalOpen(true);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to check system setup status", err);
+    } finally {
+      setSetupChecked(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    checkSetupStatus();
+  }, [checkSetupStatus]);
 
   // Load Saved Hierarchy and Company from DB on mount
   useEffect(() => {
@@ -369,9 +405,14 @@ export default function Home() {
 
   // Trigger Simulation via FastAPI backend
   const triggerSimulation = async () => {
+    if (!isMongoConnected) {
+      setBanner("Required setup incomplete: Cloud MongoDB Atlas must be connected before autonomous company operations can run.");
+      setSetupModalOpen(true);
+      return;
+    }
     if (isSimulating) return;
     setIsSimulating(true);
-    setBanner("Autonomous Business Cycle initiated! Watch agents collaborate live.");
+    setBanner("Autonomous Business Cycle initiated! Agents are executing real tasks live.");
 
     try {
       const host = window.location.hostname || "localhost";
@@ -380,72 +421,23 @@ export default function Home() {
       });
 
       if (!res.ok) {
-        throw new Error("Backend response error");
+        const errorText = await res.text();
+        throw new Error(errorText || "Backend response error");
       }
 
-      handleEventReceived({
-        type: "SimulationTriggered",
-        payload: {
-          agent: "ceo",
-          status: "WORKING",
-          task: "Reviewing company strategy and market opportunities"
-        }
-      });
-    } catch (err) {
-      console.error("Simulation fallback trigger", err);
-      // Fallback local simulation sequence
-      setTimeout(() => {
-        handleEventReceived({
-          type: "AgentStatusChanged",
-          payload: { agent: "ceo", status: "WORKING", task: "Reviewing strategy & dispatching research" }
-        });
-      }, 1000);
-
-      setTimeout(() => {
-        handleEventReceived({
-          type: "AgentStatusChanged",
-          payload: { agent: "strategy", status: "WORKING", task: "Researching AI GPU SaaS market demand" }
-        });
-      }, 3000);
-
-      setTimeout(() => {
-        handleEventReceived({
-          type: "AgentStatusChanged",
-          payload: { agent: "product", status: "WORKING", task: "Synthesizing PRD for GPU optimization engine" }
-        });
-        handleEventReceived({
-          type: "AgentStatusChanged",
-          payload: { agent: "strategy", status: "IDLE", task: "Research complete" }
-        });
-      }, 6000);
-
-      setTimeout(() => {
-        handleEventReceived({
-          type: "AgentStatusChanged",
-          payload: { agent: "engineering", status: "WORKING", task: "Implementing core model router & testing vLLM" }
-        });
-        handleEventReceived({
-          type: "AgentStatusChanged",
-          payload: { agent: "product", status: "IDLE", task: "PRD validated" }
-        });
-      }, 9000);
-
-      setTimeout(() => {
-        handleEventReceived({
-          type: "AgentStatusChanged",
-          payload: { agent: "revenue", status: "WORKING", task: "Processing first inbound customer ₹18,500" }
-        });
-        handleEventReceived({
-          type: "AgentStatusChanged",
-          payload: { agent: "engineering", status: "IDLE", task: "Build deployed to production" }
-        });
-      }, 13000);
+      const data = await res.json();
+      console.log("Autonomous business cycle started:", data);
+    } catch (err: any) {
+      console.error("Simulation trigger failed", err);
+      setBanner(`Simulation failed to start: ${err.message}`);
+      setIsSimulating(false);
+      return;
     }
 
     setTimeout(() => {
       setIsSimulating(false);
       setBanner(null);
-    }, 15000);
+    }, 12000);
   };
 
   // Toggle Single Agent Status
@@ -474,45 +466,77 @@ export default function Home() {
   };
 
   // Dispatch New Task from Modal
-  const handleDispatchTask = (agentId: string, taskDirective: string) => {
+  const handleDispatchTask = async (agentId: string, taskDirective: string) => {
+    if (!isMongoConnected) {
+      setBanner("Required setup incomplete: Cloud MongoDB Atlas must be connected before dispatching tasks.");
+      setSetupModalOpen(true);
+      return;
+    }
+
+    setBanner(`Dispatching directive to ${agentId.toUpperCase()}...`);
+
+    // Optimistically update status to WORKING
     setAgents((prev) => {
       const a = prev[agentId];
       if (!a) return prev;
-      const updated = {
-        ...a,
-        status: "WORKING" as any,
-        task: taskDirective,
-        metrics: {
-          ...a.metrics,
-          tasks: a.metrics.tasks + 1,
+      return {
+        ...prev,
+        [agentId]: {
+          ...a,
+          status: "WORKING" as any,
+          task: taskDirective,
         }
       };
-
-      if (selectedAgent && selectedAgent.id === agentId) {
-        setSelectedAgent(updated);
-      }
-
-      handleEventReceived({
-        type: "TaskCreated",
-        payload: { from: "founder", to: agentId, task: taskDirective }
-      });
-
-      handleEventReceived({
-        type: "AgentStatusChanged",
-        payload: { agent: agentId, status: "WORKING", task: taskDirective }
-      });
-
-      return { ...prev, [agentId]: updated };
     });
 
-    setBanner(`Directive dispatched to ${agentId.toUpperCase()}: "${taskDirective.slice(0, 45)}..."`);
-    setTimeout(() => setBanner(null), 4000);
+    try {
+      const host = window.location.hostname || "localhost";
+      const res = await fetch(`http://${host}:8003/api/v1/companies/${companyId}/task`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          agent: agentId,
+          task: taskDirective
+        })
+      });
+
+      if (res.ok) {
+        const result = await res.json();
+        setBanner(`Agent ${agentId.toUpperCase()} completed directive: "${taskDirective.slice(0, 45)}..."`);
+
+        // Update agent to IDLE with the result
+        setAgents((prev) => {
+          const a = prev[agentId];
+          if (!a) return prev;
+          return {
+            ...prev,
+            [agentId]: {
+              ...a,
+              status: "IDLE" as any,
+              task: "Completed: " + (result.result ? result.result.slice(0, 60) + "..." : taskDirective),
+              metrics: {
+                ...a.metrics,
+                tasks: (a.metrics?.tasks || 0) + 1,
+              }
+            }
+          };
+        });
+      } else {
+        const errText = await res.text();
+        setBanner(`Failed to execute directive: ${errText}`);
+      }
+    } catch (err: any) {
+      console.error("Failed to dispatch task", err);
+      setBanner(`Task dispatch error: ${err.message}`);
+    }
+
+    setTimeout(() => setBanner(null), 5000);
   };
 
   const navItems: { id: NavTab; label: string; icon: React.ReactNode; badge?: string }[] = [
     { id: "command-center", label: "Command Center", icon: <LayoutDashboard size={19} /> },
     { id: "agents", label: "Agents", icon: <Users size={19} /> },
-    { id: "workflows", label: "Workflows & Approvals", icon: <GitBranch size={19} />, badge: "1" },
+    { id: "workflows", label: "Workflows & Approvals", icon: <GitBranch size={19} /> },
     { id: "metrics", label: "Economics & Revenue", icon: <BarChart2 size={19} /> },
     { id: "settings", label: "Settings", icon: <Settings size={19} /> },
   ];
@@ -685,6 +709,29 @@ export default function Home() {
               </button>
             )}
 
+            {/* MongoDB Atlas Status Pill */}
+            <button
+              onClick={() => {
+                if (!isMongoConnected) {
+                  setSetupModalOpen(true);
+                } else {
+                  setActiveTab("settings");
+                }
+              }}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-mono border transition-all active:scale-95 ${
+                isMongoConnected 
+                  ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-400 hover:bg-emerald-900/30' 
+                  : 'bg-amber-950/50 border-amber-500/40 text-amber-300 hover:bg-amber-900/40 shadow-sm shadow-amber-900/20 animate-pulse'
+              }`}
+              title={isMongoConnected ? `Cloud MongoDB Atlas Connected (${mongoLatency ?? '--'}ms) - click to view settings` : "Setup Required: Click to connect Cloud MongoDB Atlas"}
+            >
+              <Database size={13} className={isMongoConnected ? "text-emerald-400" : "text-amber-400"} />
+              <span className="hidden sm:inline font-semibold">
+                {isMongoConnected ? `Atlas ${mongoLatency ? `${mongoLatency}ms` : 'Active'}` : 'Setup Required'}
+              </span>
+              <span className={`w-2 h-2 rounded-full ${isMongoConnected ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+            </button>
+
             {/* Quick Dispatch Task */}
             <button
               onClick={() => {
@@ -722,6 +769,13 @@ export default function Home() {
             </button>
           </div>
         </header>
+
+        {/* Required Setup Incomplete Banner */}
+        <RequiredSetupBanner 
+          isMongoConnected={isMongoConnected}
+          onOpenSetupModal={() => setSetupModalOpen(true)}
+          onGoToSettings={() => setActiveTab("settings")}
+        />
 
         {/* Notification / Simulation Banner */}
         {banner && (
@@ -791,7 +845,12 @@ export default function Home() {
           )}
 
           {activeTab === "settings" && (
-            <SettingsView />
+            <SettingsView 
+              onMongoStatusChange={(connected, latency) => {
+                setIsMongoConnected(connected);
+                setMongoLatency(latency);
+              }}
+            />
           )}
         </div>
 
@@ -831,6 +890,22 @@ export default function Home() {
           isOpen={eventsFeedOpen}
           onClose={() => setEventsFeedOpen(false)}
           events={events}
+        />
+
+        {/* Required Setup Modal (Cloud MongoDB Atlas Onboarding Gate) */}
+        <RequiredSetupModal
+          isOpen={setupModalOpen}
+          onClose={() => setSetupModalOpen(false)}
+          onSetupComplete={(mongoData) => {
+            setIsMongoConnected(true);
+            setMongoLatency(mongoData?.latency_ms ?? null);
+            setBanner(`Cloud MongoDB Atlas successfully connected (${mongoData?.latency_ms ?? ''}ms)! All company workflows unlocked.`);
+            setTimeout(() => setBanner(null), 5000);
+          }}
+          onGoToSettings={() => {
+            setSetupModalOpen(false);
+            setActiveTab("settings");
+          }}
         />
       </main>
     </div>

@@ -93,12 +93,14 @@ export default function OrgRestructureModal({
   ];
 
   const models = [
+    'nvidia/nemotron-3-ultra-550b-a55b',
+    'meta/llama-3.3-70b-instruct',
+    'deepseek-ai/deepseek-r1',
     'Gemini 1.5 Pro',
     'Gemini 1.5 Flash',
     'Claude 3.5 Sonnet',
     'GPT-4o',
     'GPT-4o-mini',
-    'NVIDIA NIM Llama 3.3',
     'Hermes 3 / Llama 3.1',
     'Local Ollama / vLLM'
   ];

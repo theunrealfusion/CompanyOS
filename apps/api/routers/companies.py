@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from typing import Dict, Any, Optional
 import uuid
+import os
 
 from apps.api.database.session import get_db
 from apps.api.models.organization import Company
@@ -13,10 +14,11 @@ router = APIRouter(prefix="/companies", tags=["companies"])
 
 DEFAULT_SETTINGS = {
     # Model Router Settings
+    "nvidia_api_key": os.getenv("NVIDIA_API_KEY", ""),
+    "nvidia_nim_endpoint": "https://integrate.api.nvidia.com/v1",
     "gemini_api_key": "",
     "openai_api_key": "",
     "anthropic_api_key": "",
-    "nvidia_nim_endpoint": "http://localhost:8000/v1",
     "ollama_vllm_url": "http://localhost:11434",
     "default_model": "gemini-1.5-pro",
     "fallback_model": "gpt-4o-mini",
@@ -97,6 +99,13 @@ async def update_company_settings(company_id: str, payload: Dict[str, Any] = Bod
     if "company_mission" in payload and payload["company_mission"]:
         company.mission = payload["company_mission"]
 
+    # If mongodb_uri was updated, connect to it
+    if "mongodb_uri" in payload and payload["mongodb_uri"]:
+        try:
+            await mongo_manager.connect(payload["mongodb_uri"].strip())
+        except Exception as e:
+            logger.warning(f"Could not connect to updated mongodb_uri: {e}")
+
     await db.commit()
     await db.refresh(company)
 
@@ -133,29 +142,50 @@ async def update_company_hierarchy(company_id: str, payload: Dict[str, Any] = Bo
     await publish_event("OrgHierarchyUpdated", {"company_id": company_id, "nodes_count": len(payload.get("nodes", []))})
     return {"status": "success", "hierarchy": company.org_hierarchy}
 
+from apps.api.runtime.engine import run_autonomous_business_cycle, execute_task
+from apps.api.database.mongodb import mongo_manager
+
 @router.post("/{company_id}/simulate")
-async def simulate_company(company_id: str):
-    async def run_simulation():
-        events = [
-            {"type": "AgentStatusChanged", "payload": {"agent": "ceo", "status": "WORKING", "task": "Reviewing strategy"}},
-            {"type": "AgentStatusChanged", "payload": {"agent": "strategy", "status": "WORKING", "task": "Researching market"}},
-            {"type": "TaskCreated", "payload": {"from": "ceo", "to": "strategy", "task": "Find profitable AI business"}},
-        ]
-        for event in events:
-            await asyncio.sleep(2)
-            await publish_event(event["type"], event["payload"])
-            
-        await asyncio.sleep(3)
-        await publish_event("AgentStatusChanged", {"agent": "product", "status": "WORKING", "task": "Writing PRD"})
-        await publish_event("AgentStatusChanged", {"agent": "strategy", "status": "IDLE", "task": None})
-        
-        await asyncio.sleep(4)
-        await publish_event("AgentStatusChanged", {"agent": "engineering", "status": "WORKING", "task": "Implementing features"})
-        await publish_event("AgentStatusChanged", {"agent": "product", "status": "IDLE", "task": None})
-        
-        await asyncio.sleep(4)
-        await publish_event("AgentStatusChanged", {"agent": "revenue", "status": "WORKING", "task": "Recording sales"})
-        await publish_event("AgentStatusChanged", {"agent": "engineering", "status": "IDLE", "task": None})
-        
-    asyncio.create_task(run_simulation())
-    return {"status": "started", "company_id": company_id}
+async def simulate_company(company_id: str, db: AsyncSession = Depends(get_db)):
+    # Ensure MongoDB setup is completed before launching autonomous operations
+    if not mongo_manager.is_connected:
+        comp_res = await db.execute(select(Company).where(Company.id == uuid.UUID(company_id)))
+        comp = comp_res.scalar_one_or_none()
+        saved_uri = comp.settings.get("mongodb_uri", "").strip() if (comp and comp.settings) else os.getenv("MONGODB_URI", "").strip()
+        if saved_uri:
+            await mongo_manager.connect(saved_uri)
+
+    if not mongo_manager.is_connected:
+        raise HTTPException(
+            status_code=400,
+            detail="Required setup incomplete: Cloud MongoDB Atlas is not connected. Please configure your Atlas connection string before running autonomous company cycles."
+        )
+
+    # Run genuine multi-agent autonomous execution with real tasks, model router, and DB events
+    asyncio.create_task(run_autonomous_business_cycle(company_id))
+    return {"status": "started", "company_id": company_id, "mode": "GENUINE_EXECUTION"}
+
+@router.post("/{company_id}/task")
+async def dispatch_company_task(company_id: str, payload: Dict[str, Any] = Body(...), db: AsyncSession = Depends(get_db)):
+    # Ensure MongoDB setup is completed before executing directives
+    if not mongo_manager.is_connected:
+        comp_res = await db.execute(select(Company).where(Company.id == uuid.UUID(company_id)))
+        comp = comp_res.scalar_one_or_none()
+        saved_uri = comp.settings.get("mongodb_uri", "").strip() if (comp and comp.settings) else os.getenv("MONGODB_URI", "").strip()
+        if saved_uri:
+            await mongo_manager.connect(saved_uri)
+
+    if not mongo_manager.is_connected:
+        raise HTTPException(
+            status_code=400,
+            detail="Required setup incomplete: Cloud MongoDB Atlas is not connected. Please configure your Atlas connection string before dispatching tasks."
+        )
+
+    agent_id = payload.get("agent", "ceo")
+    task_title = payload.get("task", "Analyze company performance")
+    comp_res = await db.execute(select(Company).where(Company.id == uuid.UUID(company_id)))
+    comp = comp_res.scalar_one_or_none()
+    settings = comp.settings if comp else {}
+    result = await execute_task(uuid.UUID(company_id), agent_id, task_title, db, settings)
+    return result
+

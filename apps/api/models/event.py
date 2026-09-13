@@ -31,3 +31,32 @@ class AuditLog(Base):
     details = Column(JSON, default=dict)
     
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+class Approval(Base):
+    __tablename__ = "approvals"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
+    requester = Column(String, nullable=False)
+    department = Column(String, nullable=False)
+    title = Column(String, nullable=False)
+    cost = Column(String, nullable=True)
+    expected_return = Column(String, nullable=True)
+    risk = Column(String, default="LOW")
+    status = Column(String, default="PENDING")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    decided_at = Column(DateTime, nullable=True)
+
+from sqlalchemy import Float
+
+class FinancialTransaction(Base):
+    __tablename__ = "financial_transactions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
+    description = Column(String, nullable=False)
+    amount = Column(Float, nullable=False)
+    transaction_type = Column(String, default="REVENUE")
+    customer = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+

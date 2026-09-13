@@ -17,10 +17,18 @@ import {
   Sliders,
   Sparkles,
   DollarSign,
-  Database
+  Database,
+  Zap,
+  Play,
+  Brain,
+  ExternalLink
 } from 'lucide-react';
 
-export default function SettingsView() {
+interface SettingsViewProps {
+  onMongoStatusChange?: (isConnected: boolean, latencyMs: number | null) => void;
+}
+
+export default function SettingsView({ onMongoStatusChange }: SettingsViewProps = {}) {
   const [apiUrl, setApiUrl] = useState('http://localhost:8003');
   const [apiStatus, setApiStatus] = useState<'testing' | 'online' | 'offline'>('online');
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
@@ -29,28 +37,43 @@ export default function SettingsView() {
   const [companyId, setCompanyId] = useState<string>("ae5ecdc5-0a51-4589-98d6-fe7a4362d559");
 
   // Show/hide API keys
+  const [showNvidiaKey, setShowNvidiaKey] = useState(false);
   const [showGeminiKey, setShowGeminiKey] = useState(false);
   const [showOpenaiKey, setShowOpenaiKey] = useState(false);
   const [showAnthropicKey, setShowAnthropicKey] = useState(false);
   const [showTelegramToken, setShowTelegramToken] = useState(false);
   const [showMongoUri, setShowMongoUri] = useState(false);
 
+  // NVIDIA NIM Models State
+  const [nvidiaModels, setNvidiaModels] = useState<Array<{ id: string; name: string; owned_by?: string; supports_thinking?: boolean }>>([]);
+  const [fetchingModels, setFetchingModels] = useState(false);
+  const [fetchModelsFeedback, setFetchModelsFeedback] = useState<{ message: string; isError: boolean } | null>(null);
+
+  // NVIDIA NIM Model Test State
+  const [testNvidiaModel, setTestNvidiaModel] = useState('nvidia/nemotron-3-ultra-550b-a55b');
+  const [testPrompt, setTestPrompt] = useState('Write a limerick about the wonders of GPU computing.');
+  const [testEnableThinking, setTestEnableThinking] = useState(true);
+  const [testingNvidia, setTestingNvidia] = useState(false);
+  const [testOutput, setTestOutput] = useState<{ reasoning: string; content: string } | null>(null);
+
   // Cloud MongoDB State (Default database)
-  const [mongoUri, setMongoUri] = useState('mongodb+srv://companyos_cloud:CompanyOS2026Secure@cluster0.a1b2c.mongodb.net/companyos?retryWrites=true&w=majority&appName=CompanyOS');
-  const [mongoStatus, setMongoStatus] = useState<'connected' | 'standby' | 'testing'>('connected');
-  const [mongoLatency, setMongoLatency] = useState<number | null>(34);
+  const [mongoUri, setMongoUri] = useState('');
+  const [mongoStatus, setMongoStatus] = useState<'CONNECTED' | 'DISCONNECTED' | 'NOT_CONFIGURED' | 'TESTING'>('NOT_CONFIGURED');
+  const [mongoLatency, setMongoLatency] = useState<number | null>(null);
+  const [mongoCollections, setMongoCollections] = useState<string[]>([]);
   const [mongoTesting, setMongoTesting] = useState(false);
-  const [mongoFeedback, setMongoFeedback] = useState<string | null>(null);
+  const [mongoFeedback, setMongoFeedback] = useState<{ message: string; isError: boolean } | null>(null);
 
   // Settings State
   const [settings, setSettings] = useState({
     // Model Router
-    default_model: "gemini-1.5-pro",
+    default_model: "nvidia/nemotron-3-ultra-550b-a55b",
     fallback_model: "gpt-4o-mini",
+    nvidia_api_key: "",
+    nvidia_nim_endpoint: "https://integrate.api.nvidia.com/v1",
     gemini_api_key: "",
     openai_api_key: "",
     anthropic_api_key: "",
-    nvidia_nim_endpoint: "http://localhost:8000/v1",
     ollama_vllm_url: "http://localhost:11434",
     temperature: 0.2,
     max_tokens: 4096,
@@ -95,6 +118,9 @@ export default function SettingsView() {
                   ...loaded,
                   company_name: activeComp.name || prev.company_name,
                   company_mission: activeComp.mission || prev.company_mission,
+                  nvidia_nim_endpoint: loaded.nvidia_nim_endpoint && !loaded.nvidia_nim_endpoint.includes("localhost:8000") 
+                    ? loaded.nvidia_nim_endpoint 
+                    : "https://integrate.api.nvidia.com/v1",
                 }));
               }
             }
@@ -102,10 +128,47 @@ export default function SettingsView() {
         } catch (err) {
           console.error("Could not fetch remote settings, using local defaults", err);
         }
+
+        // Fetch NVIDIA NIM models on mount
+        try {
+          const modelsRes = await fetch(`${backendHost}/api/v1/models/nvidia`);
+          if (modelsRes.ok) {
+            const data = await modelsRes.json();
+            if (data.models && data.models.length > 0) {
+              setNvidiaModels(data.models);
+            }
+          }
+        } catch (err) {
+          console.error("Could not fetch initial NVIDIA models", err);
+        }
+
+        // Fetch real Cloud MongoDB Status on mount
+        try {
+          const mongoRes = await fetch(`${backendHost}/api/v1/mongodb/status`);
+          if (mongoRes.ok) {
+            const data = await mongoRes.json();
+            if (data.uri) setMongoUri(data.uri);
+            if (data.is_connected) {
+              setMongoStatus('CONNECTED');
+              setMongoLatency(data.latency_ms);
+              setMongoCollections(data.collections || []);
+              onMongoStatusChange?.(true, data.latency_ms);
+            } else {
+              setMongoStatus(data.status || 'NOT_CONFIGURED');
+              setMongoLatency(null);
+              setMongoCollections([]);
+              onMongoStatusChange?.(false, null);
+            }
+          }
+        } catch (err) {
+          setMongoStatus('DISCONNECTED');
+          setMongoLatency(null);
+          onMongoStatusChange?.(false, null);
+        }
       }
     };
     init();
-  }, []);
+  }, [onMongoStatusChange]);
 
   const testConnection = async () => {
     setApiStatus('testing');
@@ -128,23 +191,131 @@ export default function SettingsView() {
 
   const testMongoConnection = async () => {
     setMongoTesting(true);
+    setMongoFeedback(null);
     try {
-      const res = await fetch(`${apiUrl}/api/v1/mongodb/status`);
-      if (res.ok) {
-        const data = await res.json();
-        setMongoStatus(data.is_connected ? 'connected' : 'standby');
-        setMongoLatency(data.latency_ms || 32);
-        setMongoFeedback(`Cloud MongoDB Atlas connected: 6 collections active (${data.collections.join(', ')})`);
+      // If user typed a URI, send it to /api/v1/mongodb/connect; otherwise check current status
+      const trimmedUri = mongoUri.trim();
+      const endpoint = trimmedUri ? `${apiUrl}/api/v1/mongodb/connect` : `${apiUrl}/api/v1/mongodb/status`;
+      const options: RequestInit = trimmedUri 
+        ? {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ uri: trimmedUri })
+          }
+        : { method: 'GET' };
+
+      const res = await fetch(endpoint, options);
+      const data = await res.json();
+      
+      if (data.is_connected) {
+        setMongoStatus('CONNECTED');
+        setMongoLatency(data.latency_ms);
+        setMongoCollections(data.collections || []);
+        onMongoStatusChange?.(true, data.latency_ms);
+        const colCount = data.collections?.length || 0;
+        setMongoFeedback({
+          message: `Connected successfully to Cloud MongoDB Atlas (${data.database || 'companyos'}). Latency: ${data.latency_ms}ms. Collections: ${colCount > 0 ? data.collections.join(', ') : 'None yet'}.`,
+          isError: false
+        });
       } else {
-        setMongoStatus('standby');
-        setMongoFeedback('Operating in cloud-ready resilient cache mode');
+        setMongoStatus(data.status || 'DISCONNECTED');
+        setMongoLatency(null);
+        setMongoCollections([]);
+        onMongoStatusChange?.(false, null);
+        setMongoFeedback({
+          message: data.error || 'Connection failed: Unable to connect to MongoDB cluster.',
+          isError: true
+        });
       }
-    } catch {
-      setMongoStatus('standby');
-      setMongoFeedback('Cloud MongoDB instance is active in resilient fallback mode');
+    } catch (err: any) {
+      setMongoStatus('DISCONNECTED');
+      setMongoLatency(null);
+      setMongoCollections([]);
+      onMongoStatusChange?.(false, null);
+      setMongoFeedback({
+        message: `Network or backend error: ${err.message}`,
+        isError: true
+      });
     } finally {
       setMongoTesting(false);
-      setTimeout(() => setMongoFeedback(null), 5000);
+    }
+  };
+
+  const fetchNvidiaModels = async (customEndpoint?: string, customKey?: string) => {
+    setFetchingModels(true);
+    setFetchModelsFeedback(null);
+    try {
+      const endpoint = customEndpoint !== undefined ? customEndpoint : settings.nvidia_nim_endpoint;
+      const apiKey = customKey !== undefined ? customKey : settings.nvidia_api_key;
+
+      const res = await fetch(`${apiUrl}/api/v1/models/nvidia`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          endpoint: endpoint || 'https://integrate.api.nvidia.com/v1',
+          api_key: apiKey || ''
+        })
+      });
+
+      const data = await res.json();
+      if (data.status === 'success' && data.models && data.models.length > 0) {
+        setNvidiaModels(data.models);
+        setFetchModelsFeedback({
+          message: `Successfully loaded ${data.count} models from ${data.endpoint}!`,
+          isError: false
+        });
+        setTimeout(() => setFetchModelsFeedback(null), 6000);
+      } else {
+        setFetchModelsFeedback({
+          message: data.error || 'Failed to fetch models from endpoint.',
+          isError: true
+        });
+      }
+    } catch (err: any) {
+      setFetchModelsFeedback({
+        message: `Network error: ${err.message}`,
+        isError: true
+      });
+    } finally {
+      setFetchingModels(false);
+    }
+  };
+
+  const handleTestNvidia = async () => {
+    if (!settings.nvidia_api_key.trim()) {
+      alert('Please enter an NVIDIA API Key (nvapi-...) first.');
+      return;
+    }
+    setTestingNvidia(true);
+    setTestOutput(null);
+    try {
+      const res = await fetch(`${apiUrl}/api/v1/models/nvidia/test`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          endpoint: settings.nvidia_nim_endpoint || 'https://integrate.api.nvidia.com/v1',
+          api_key: settings.nvidia_api_key,
+          model: testNvidiaModel || settings.default_model,
+          prompt: testPrompt,
+          enable_thinking: testEnableThinking,
+          temperature: settings.temperature,
+          max_tokens: 1024
+        })
+      });
+
+      const data = await res.json();
+      if (data.status === 'success') {
+        setTestOutput({
+          reasoning: data.reasoning || '',
+          content: data.content || ''
+        });
+      } else {
+        alert('NVIDIA inference test failed: ' + (data.error || 'Unknown error'));
+      }
+    } catch (err: any) {
+      alert('Error testing NVIDIA NIM: ' + err.message);
+    } finally {
+      setTestingNvidia(false);
     }
   };
 
@@ -153,14 +324,21 @@ export default function SettingsView() {
     setSaving(true);
 
     try {
+      const payloadToSave = {
+        ...settings,
+        mongodb_uri: mongoUri.trim()
+      };
       const res = await fetch(`${apiUrl}/api/v1/companies/${companyId}/settings`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(settings)
+        body: JSON.stringify(payloadToSave)
       });
 
       if (res.ok) {
         setSaved(true);
+        if (mongoStatus === 'CONNECTED') {
+          onMongoStatusChange?.(true, mongoLatency);
+        }
         setTimeout(() => setSaved(false), 3000);
       } else {
         alert("Failed to save settings: " + (await res.text()));
@@ -222,33 +400,89 @@ export default function SettingsView() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
             <div>
-              <label className="block font-semibold text-gray-300 mb-1">Primary Autonomous Model *</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="font-semibold text-gray-300">Primary Autonomous Model *</label>
+                <button
+                  type="button"
+                  onClick={() => fetchNvidiaModels()}
+                  disabled={fetchingModels}
+                  className="text-[10px] font-mono text-blue-400 hover:text-blue-300 flex items-center gap-1"
+                >
+                  <RefreshCw size={11} className={fetchingModels ? 'animate-spin' : ''} />
+                  <span>{fetchingModels ? 'Fetching...' : `Sync Models (${nvidiaModels.length})`}</span>
+                </button>
+              </div>
               <select
                 value={settings.default_model}
-                onChange={(e) => setSettings({ ...settings, default_model: e.target.value })}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSettings({ ...settings, default_model: val });
+                  if (val.includes('/') || val.includes('nemotron')) {
+                    setTestNvidiaModel(val);
+                  }
+                }}
                 className="w-full bg-gray-900 border border-gray-700 rounded-xl px-3.5 py-2.5 text-white font-mono focus:outline-none focus:border-blue-500"
               >
-                <option value="gemini-1.5-pro">Google Gemini 1.5 Pro (Recommended)</option>
-                <option value="gemini-1.5-flash">Google Gemini 1.5 Flash (Fast & Low Cost)</option>
-                <option value="claude-3-5-sonnet-20241022">Anthropic Claude 3.5 Sonnet</option>
-                <option value="gpt-4o">OpenAI GPT-4o</option>
-                <option value="gpt-4o-mini">OpenAI GPT-4o-mini</option>
-                <option value="meta-llama/Llama-3.3-70B-Instruct">NVIDIA NIM / Llama 3.3 70B</option>
-                <option value="local/vllm">Self-Hosted vLLM / Ollama</option>
+                {nvidiaModels.length > 0 ? (
+                  <optgroup label={`NVIDIA NIM (build.nvidia.com) — ${nvidiaModels.length} Models`}>
+                    {nvidiaModels.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.id} {m.supports_thinking ? '🧠 [Thinking / Reasoning]' : ''}
+                      </option>
+                    ))}
+                  </optgroup>
+                ) : (
+                  <optgroup label="NVIDIA NIM (build.nvidia.com)">
+                    <option value="nvidia/nemotron-3-ultra-550b-a55b">nvidia/nemotron-3-ultra-550b-a55b 🧠 [Thinking / Reasoning]</option>
+                    <option value="meta/llama-3.3-70b-instruct">meta/llama-3.3-70b-instruct</option>
+                    <option value="meta/llama-3.1-405b-instruct">meta/llama-3.1-405b-instruct</option>
+                    <option value="deepseek-ai/deepseek-r1">deepseek-ai/deepseek-r1 🧠</option>
+                    <option value="mistralai/mistral-large-2-instruct">mistralai/mistral-large-2-instruct</option>
+                    <option value="qwen/qwen2.5-72b-instruct">qwen/qwen2.5-72b-instruct</option>
+                  </optgroup>
+                )}
+                <optgroup label="Google Gemini">
+                  <option value="gemini-1.5-pro">Google Gemini 1.5 Pro</option>
+                  <option value="gemini-1.5-flash">Google Gemini 1.5 Flash (Fast & Cost Efficient)</option>
+                </optgroup>
+                <optgroup label="Anthropic">
+                  <option value="claude-3-5-sonnet-20241022">Anthropic Claude 3.5 Sonnet</option>
+                </optgroup>
+                <optgroup label="OpenAI">
+                  <option value="gpt-4o">OpenAI GPT-4o</option>
+                  <option value="gpt-4o-mini">OpenAI GPT-4o-mini</option>
+                </optgroup>
+                <optgroup label="Self-Hosted / Local">
+                  <option value="local/vllm">Self-Hosted vLLM / Ollama</option>
+                </optgroup>
               </select>
             </div>
 
             <div>
-              <label className="block font-semibold text-gray-300 mb-1">Fallback Failover Model</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="font-semibold text-gray-300">Fallback Failover Model</label>
+                <span className="text-[10px] text-gray-500 font-mono">Used if primary rate-limited</span>
+              </div>
               <select
                 value={settings.fallback_model}
                 onChange={(e) => setSettings({ ...settings, fallback_model: e.target.value })}
                 className="w-full bg-gray-900 border border-gray-700 rounded-xl px-3.5 py-2.5 text-white font-mono focus:outline-none focus:border-blue-500"
               >
-                <option value="gpt-4o-mini">OpenAI GPT-4o-mini</option>
-                <option value="gemini-1.5-flash">Google Gemini 1.5 Flash</option>
-                <option value="meta-llama/Llama-3.1-8B-Instruct">NVIDIA NIM Llama 3.1 8B</option>
-                <option value="local/ollama">Local Ollama</option>
+                {nvidiaModels.length > 0 && (
+                  <optgroup label={`NVIDIA NIM — ${nvidiaModels.length} Models`}>
+                    {nvidiaModels.slice(0, 15).map((m) => (
+                      <option key={`fb-${m.id}`} value={m.id}>
+                        {m.id}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                <optgroup label="Standard Fallbacks">
+                  <option value="gpt-4o-mini">OpenAI GPT-4o-mini</option>
+                  <option value="gemini-1.5-flash">Google Gemini 1.5 Flash</option>
+                  <option value="meta-llama/Llama-3.1-8B-Instruct">NVIDIA NIM Llama 3.1 8B</option>
+                  <option value="local/ollama">Local Ollama</option>
+                </optgroup>
               </select>
             </div>
           </div>
@@ -257,6 +491,67 @@ export default function SettingsView() {
           <div className="space-y-3 pt-2">
             <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Provider API Keys</h4>
             
+            {/* NVIDIA API Key */}
+            <div className="p-3.5 bg-gradient-to-r from-emerald-950/20 via-gray-900 to-gray-900 border border-emerald-500/30 rounded-xl space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 font-bold text-[10px] rounded border border-emerald-500/30 font-mono">
+                    NVIDIA NIM
+                  </span>
+                  <label className="text-xs font-semibold text-white">NVIDIA API Key (build.nvidia.com)</label>
+                </div>
+                <a
+                  href="https://build.nvidia.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[10px] text-emerald-400 hover:text-emerald-300 flex items-center gap-1"
+                >
+                  <span>Get Key on build.nvidia.com</span>
+                  <ExternalLink size={11} />
+                </a>
+              </div>
+
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type={showNvidiaKey ? "text" : "password"}
+                    placeholder="nvapi-..."
+                    value={settings.nvidia_api_key}
+                    onChange={(e) => setSettings({ ...settings, nvidia_api_key: e.target.value })}
+                    className="w-full bg-black/50 border border-emerald-500/40 rounded-xl pl-3.5 pr-10 py-2 text-xs text-white font-mono focus:outline-none focus:border-emerald-400"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNvidiaKey(!showNvidiaKey)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
+                  >
+                    {showNvidiaKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => fetchNvidiaModels()}
+                  disabled={fetchingModels}
+                  className="px-3.5 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 rounded-xl text-xs font-semibold flex items-center gap-1.5 active:scale-95 transition-colors"
+                  title="Fetch all available models from NVIDIA NIM"
+                >
+                  <RefreshCw size={13} className={fetchingModels ? 'animate-spin' : ''} />
+                  <span>{fetchingModels ? 'Discovering...' : 'Fetch 90+ Models'}</span>
+                </button>
+              </div>
+
+              {fetchModelsFeedback && (
+                <div className={`p-2 rounded-lg text-[11px] flex items-center gap-2 ${
+                  fetchModelsFeedback.isError 
+                    ? 'bg-rose-950/40 border border-rose-800/40 text-rose-300' 
+                    : 'bg-emerald-950/40 border border-emerald-700/40 text-emerald-300'
+                }`}>
+                  {fetchModelsFeedback.isError ? <AlertCircle size={13} /> : <CheckCircle2 size={13} />}
+                  <span>{fetchModelsFeedback.message}</span>
+                </div>
+              )}
+            </div>
+
             {/* Gemini */}
             <div>
               <label className="block text-xs font-medium text-gray-300 mb-1">Google Gemini API Key</label>
@@ -321,17 +616,20 @@ export default function SettingsView() {
             </div>
           </div>
 
-          {/* Local / Private Endpoints */}
+          {/* Local / Private / NIM Endpoints */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs pt-2">
             <div>
-              <label className="block font-medium text-gray-300 mb-1">NVIDIA NIM Inference Endpoint</label>
+              <label className="block font-medium text-gray-300 mb-1">
+                NVIDIA NIM Inference Endpoint (OpenAI Compatible)
+              </label>
               <input
                 type="text"
-                placeholder="http://localhost:8000/v1"
+                placeholder="https://integrate.api.nvidia.com/v1"
                 value={settings.nvidia_nim_endpoint}
                 onChange={(e) => setSettings({ ...settings, nvidia_nim_endpoint: e.target.value })}
                 className="w-full bg-gray-900 border border-gray-700 rounded-xl px-3.5 py-2 text-white font-mono focus:outline-none focus:border-blue-500"
               />
+              <p className="text-[10px] text-gray-500 mt-1">Default: https://integrate.api.nvidia.com/v1</p>
             </div>
 
             <div>
@@ -343,6 +641,7 @@ export default function SettingsView() {
                 onChange={(e) => setSettings({ ...settings, ollama_vllm_url: e.target.value })}
                 className="w-full bg-gray-900 border border-gray-700 rounded-xl px-3.5 py-2 text-white font-mono focus:outline-none focus:border-blue-500"
               />
+              <p className="text-[10px] text-gray-500 mt-1">Self-hosted local fallback endpoint</p>
             </div>
           </div>
 
@@ -377,6 +676,106 @@ export default function SettingsView() {
                 className="w-full bg-gray-900 border border-gray-700 rounded-xl px-3.5 py-2 text-white font-mono focus:outline-none focus:border-blue-500"
               />
             </div>
+          </div>
+
+          {/* Dedicated NVIDIA NIM Inference & Reasoning Tester */}
+          <div className="mt-4 p-4 bg-gray-900/60 border border-gray-800 rounded-xl space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Brain size={16} className="text-emerald-400" />
+                <h4 className="text-xs font-bold uppercase tracking-wider text-white">
+                  NVIDIA NIM Model & Reasoning Live Tester
+                </h4>
+              </div>
+              <label className="flex items-center gap-1.5 text-[11px] text-gray-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={testEnableThinking}
+                  onChange={(e) => setTestEnableThinking(e.target.checked)}
+                  className="rounded text-emerald-500 accent-emerald-500"
+                />
+                <span>Enable Thinking Trace (<code className="text-emerald-400 font-mono">enable_thinking: true</code>)</span>
+              </label>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-[11px] text-gray-400 mb-1">Target NIM Model</label>
+                <select
+                  value={testNvidiaModel}
+                  onChange={(e) => setTestNvidiaModel(e.target.value)}
+                  className="w-full bg-[#0b0f19] border border-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-emerald-500"
+                >
+                  {nvidiaModels.length > 0 ? (
+                    nvidiaModels.map((m) => (
+                      <option key={`test-${m.id}`} value={m.id}>
+                        {m.id} {m.supports_thinking ? '🧠' : ''}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="nvidia/nemotron-3-ultra-550b-a55b">nvidia/nemotron-3-ultra-550b-a55b</option>
+                  )}
+                </select>
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-[11px] text-gray-400 mb-1">Prompt</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={testPrompt}
+                    onChange={(e) => setTestPrompt(e.target.value)}
+                    className="flex-1 bg-[#0b0f19] border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+                    placeholder="Write a limerick about GPU computing..."
+                  />
+                  <button
+                    type="button"
+                    onClick={handleTestNvidia}
+                    disabled={testingNvidia}
+                    className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shrink-0 disabled:opacity-50"
+                  >
+                    {testingNvidia ? (
+                      <>
+                        <RefreshCw size={13} className="animate-spin" />
+                        <span>Inferring...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Play size={13} />
+                        <span>Run Test</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {testOutput && (
+              <div className="space-y-2 pt-2 border-t border-gray-800 animate-in fade-in duration-200">
+                {testOutput.reasoning && (
+                  <div className="p-3 bg-amber-950/20 border border-amber-500/30 rounded-xl space-y-1">
+                    <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-amber-400 font-mono">
+                      <Brain size={13} />
+                      <span>Reasoning / Thinking Process</span>
+                    </div>
+                    <p className="text-xs text-amber-200/90 whitespace-pre-wrap font-mono">
+                      {testOutput.reasoning}
+                    </p>
+                  </div>
+                )}
+
+                {testOutput.content && (
+                  <div className="p-3 bg-gray-950/80 border border-gray-700 rounded-xl space-y-1">
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-emerald-400 font-mono">
+                      Completion Output
+                    </div>
+                    <p className="text-xs text-gray-200 whitespace-pre-wrap font-sans">
+                      {testOutput.content}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -545,8 +944,14 @@ export default function SettingsView() {
                 </p>
               </div>
             </div>
-            <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-md font-bold">
-              Default Database
+            <span className={`text-[10px] font-mono px-2.5 py-1 rounded-md font-bold border ${
+              mongoStatus === 'CONNECTED' 
+                ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' 
+                : mongoStatus === 'NOT_CONFIGURED'
+                ? 'text-amber-400 bg-amber-500/10 border-amber-500/20'
+                : 'text-rose-400 bg-rose-500/10 border-rose-500/20'
+            }`}>
+              {mongoStatus === 'CONNECTED' ? 'CONNECTED' : mongoStatus === 'NOT_CONFIGURED' ? 'NOT CONFIGURED' : 'DISCONNECTED'}
             </span>
           </div>
 
@@ -559,7 +964,7 @@ export default function SettingsView() {
                 <div className="relative flex-1">
                   <input
                     type={showMongoUri ? "text" : "password"}
-                    placeholder="mongodb+srv://<user>:<password>@cluster0.../companyos"
+                    placeholder="mongodb+srv://<username>:<password>@cluster.mongodb.net/companyos?retryWrites=true&w=majority"
                     value={mongoUri}
                     onChange={(e) => setMongoUri(e.target.value)}
                     className="w-full bg-gray-900 border border-gray-700 rounded-xl pl-3.5 pr-10 py-2 text-xs text-white font-mono focus:outline-none focus:border-blue-500"
@@ -579,15 +984,23 @@ export default function SettingsView() {
                   className="px-3.5 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 rounded-xl transition-colors flex items-center gap-1.5 active:scale-95 font-semibold"
                 >
                   <RefreshCw size={13} className={mongoTesting ? 'animate-spin' : ''} />
-                  <span>Test Cloud Mongo</span>
+                  <span>{mongoTesting ? 'Testing...' : 'Test / Connect Cloud Mongo'}</span>
                 </button>
               </div>
             </div>
 
             {mongoFeedback && (
-              <div className="p-2.5 bg-emerald-950/40 border border-emerald-700/40 text-emerald-300 rounded-xl text-xs flex items-center gap-2">
-                <CheckCircle2 size={14} className="text-emerald-400" />
-                <span>{mongoFeedback}</span>
+              <div className={`p-3 rounded-xl text-xs flex items-start gap-2 border ${
+                mongoFeedback.isError 
+                  ? 'bg-rose-950/40 border-rose-800/40 text-rose-300' 
+                  : 'bg-emerald-950/40 border-emerald-700/40 text-emerald-300'
+              }`}>
+                {mongoFeedback.isError ? (
+                  <AlertCircle size={15} className="text-rose-400 shrink-0 mt-0.5" />
+                ) : (
+                  <CheckCircle2 size={15} className="text-emerald-400 shrink-0 mt-0.5" />
+                )}
+                <span>{mongoFeedback.message}</span>
               </div>
             )}
 
@@ -598,14 +1011,23 @@ export default function SettingsView() {
               </div>
               <div className="p-3 bg-gray-900/60 border border-gray-800 rounded-xl">
                 <div className="text-gray-500 text-[10px] uppercase font-semibold mb-0.5">Collections</div>
-                <div className="text-blue-400 font-mono text-[11px] font-medium">companies, agents, tasks, events</div>
+                <div className="text-blue-400 font-mono text-[11px] font-medium truncate">
+                  {mongoCollections.length > 0 ? mongoCollections.join(', ') : 'None (Cluster unconfigured or offline)'}
+                </div>
               </div>
               <div className="p-3 bg-gray-900/60 border border-gray-800 rounded-xl">
                 <div className="text-gray-500 text-[10px] uppercase font-semibold mb-0.5">Cloud Cluster Health</div>
-                <div className="flex items-center gap-1.5 text-emerald-400 font-mono font-medium">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>Active ({mongoLatency}ms)</span>
-                </div>
+                {mongoStatus === 'CONNECTED' && mongoLatency !== null ? (
+                  <div className="flex items-center gap-1.5 text-emerald-400 font-mono font-medium">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <span>Active ({mongoLatency}ms)</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5 text-amber-400 font-mono font-medium">
+                    <span className="w-2 h-2 rounded-full bg-amber-400" />
+                    <span>{mongoStatus === 'NOT_CONFIGURED' ? 'Unconfigured' : 'Offline'}</span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
