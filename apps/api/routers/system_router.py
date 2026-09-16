@@ -21,9 +21,14 @@ async def get_setup_status(db: AsyncSession = Depends(get_db)):
     MongoDB setup is required before autonomous company cycles can run.
     """
     # Fetch company settings from PostgreSQL
-    comp_res = await db.execute(select(Company))
-    company = comp_res.scalars().first()
-    settings = company.settings if (company and company.settings) else {}
+    try:
+        comp_res = await db.execute(select(Company))
+        company = comp_res.scalars().first()
+        settings = company.settings if (company and company.settings) else {}
+    except Exception as e:
+        logger.warning(f"Could not read company from PostgreSQL database: {e}")
+        company = None
+        settings = {}
 
     # If MongoDB is not connected yet, but settings has a saved mongodb_uri, auto-connect
     if not mongo_manager.is_connected:
