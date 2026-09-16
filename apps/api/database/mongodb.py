@@ -1,10 +1,9 @@
-import os
 import logging
-import asyncio
+import os
 import time
-from typing import Optional, Dict, Any, List
+from typing import Any
+
 from motor.motor_asyncio import AsyncIOMotorClient
-import pymongo
 
 logger = logging.getLogger("companyos.mongodb")
 
@@ -13,17 +12,18 @@ logger = logging.getLogger("companyos.mongodb")
 MONGODB_URI_ENV = os.getenv("MONGODB_URI", "")
 DB_NAME = os.getenv("MONGODB_DB_NAME", "companyos")
 
+
 class MongoDBManager:
     def __init__(self, uri: str = MONGODB_URI_ENV):
         self.uri = uri
-        self.client: Optional[AsyncIOMotorClient] = None
+        self.client: AsyncIOMotorClient | None = None
         self.db = None
         self.is_connected = False
-        self.last_error: Optional[str] = None
-        self.last_latency_ms: Optional[float] = None
-        
+        self.last_error: str | None = None
+        self.last_latency_ms: float | None = None
+
         # Real in-memory transactional store used when MongoDB is not yet configured or reachable
-        self.local_store: Dict[str, Any] = {
+        self.local_store: dict[str, Any] = {
             "companies": {},
             "agents": {},
             "tasks": {},
@@ -31,7 +31,7 @@ class MongoDBManager:
             "approvals": {},
             "settings": {},
             "hierarchy": {},
-            "transactions": []
+            "transactions": [],
         }
 
     def _mask_uri(self, uri: str) -> str:
@@ -48,7 +48,7 @@ class MongoDBManager:
                 return "mongodb+srv://****:****@cluster..."
         return uri
 
-    async def connect(self, custom_uri: Optional[str] = None) -> tuple[bool, str]:
+    async def connect(self, custom_uri: str | None = None) -> tuple[bool, str]:
         target_uri = custom_uri if custom_uri is not None else self.uri
         if not target_uri or target_uri.strip() == "":
             self.is_connected = False
@@ -60,18 +60,18 @@ class MongoDBManager:
         try:
             # Connect with real server selection timeout of 4000ms
             self.client = AsyncIOMotorClient(
-                self.uri,
-                serverSelectionTimeoutMS=4000,
-                connectTimeoutMS=4000
+                self.uri, serverSelectionTimeoutMS=4000, connectTimeoutMS=4000
             )
             self.db = self.client[DB_NAME]
-            
+
             start = time.perf_counter()
-            await self.client.admin.command('ping')
+            await self.client.admin.command("ping")
             self.last_latency_ms = round((time.perf_counter() - start) * 1000, 2)
             self.is_connected = True
             self.last_error = None
-            logger.info(f"Connected to MongoDB at {self._mask_uri(self.uri)} (ping: {self.last_latency_ms}ms)")
+            logger.info(
+                f"Connected to MongoDB at {self._mask_uri(self.uri)} (ping: {self.last_latency_ms}ms)"
+            )
             return True, f"Successfully connected to MongoDB cluster ({self.last_latency_ms}ms)"
         except Exception as e:
             self.is_connected = False
@@ -80,7 +80,7 @@ class MongoDBManager:
             logger.warning(f"MongoDB connection failed: {e}")
             return False, str(e)
 
-    async def ping(self) -> Dict[str, Any]:
+    async def ping(self) -> dict[str, Any]:
         if not self.uri or self.uri.strip() == "":
             return {
                 "status": "NOT_CONFIGURED",
@@ -91,20 +91,18 @@ class MongoDBManager:
                 "database": DB_NAME,
                 "collections": [],
                 "document_counts": {},
-                "error": "MongoDB Atlas connection URI is not configured. Set MONGODB_URI or enter URI in Settings."
+                "error": "MongoDB Atlas connection URI is not configured. Set MONGODB_URI or enter URI in Settings.",
             }
 
         try:
             if not self.client:
                 self.client = AsyncIOMotorClient(
-                    self.uri,
-                    serverSelectionTimeoutMS=4000,
-                    connectTimeoutMS=4000
+                    self.uri, serverSelectionTimeoutMS=4000, connectTimeoutMS=4000
                 )
                 self.db = self.client[DB_NAME]
 
             start = time.perf_counter()
-            await self.client.admin.command('ping')
+            await self.client.admin.command("ping")
             latency = round((time.perf_counter() - start) * 1000, 2)
             self.last_latency_ms = latency
             self.is_connected = True
@@ -119,13 +117,15 @@ class MongoDBManager:
             return {
                 "status": "CONNECTED",
                 "is_connected": True,
-                "type": "Cloud MongoDB Atlas" if "mongodb+srv://" in self.uri or "mongodb.net" in self.uri else "MongoDB Instance",
+                "type": "Cloud MongoDB Atlas"
+                if "mongodb+srv://" in self.uri or "mongodb.net" in self.uri
+                else "MongoDB Instance",
                 "uri": self._mask_uri(self.uri),
                 "latency_ms": latency,
                 "database": DB_NAME,
                 "collections": collections,
                 "document_counts": counts,
-                "error": None
+                "error": None,
             }
         except Exception as e:
             self.is_connected = False
@@ -134,17 +134,19 @@ class MongoDBManager:
             return {
                 "status": "CONNECTION_FAILED",
                 "is_connected": False,
-                "type": "Cloud MongoDB Atlas" if "mongodb+srv://" in self.uri or "mongodb.net" in self.uri else "MongoDB Instance",
+                "type": "Cloud MongoDB Atlas"
+                if "mongodb+srv://" in self.uri or "mongodb.net" in self.uri
+                else "MongoDB Instance",
                 "uri": self._mask_uri(self.uri),
                 "latency_ms": None,
                 "database": DB_NAME,
                 "collections": [],
                 "document_counts": {},
-                "error": str(e)
+                "error": str(e),
             }
 
     # Document Operations (Real MongoDB when connected, fallback local store when not)
-    async def get_settings(self, company_id: str) -> Dict[str, Any]:
+    async def get_settings(self, company_id: str) -> dict[str, Any]:
         if self.is_connected and self.db is not None:
             try:
                 doc = await self.db.settings.find_one({"company_id": company_id})
@@ -154,19 +156,25 @@ class MongoDBManager:
                 pass
         return self.local_store["settings"].get(company_id, {})
 
-    async def save_settings(self, company_id: str, settings_data: Dict[str, Any]):
+    async def save_settings(self, company_id: str, settings_data: dict[str, Any]):
         self.local_store["settings"][company_id] = settings_data
         if self.is_connected and self.db is not None:
             try:
                 await self.db.settings.update_one(
                     {"company_id": company_id},
-                    {"$set": {"company_id": company_id, "settings": settings_data, "updated_at": time.time()}},
-                    upsert=True
+                    {
+                        "$set": {
+                            "company_id": company_id,
+                            "settings": settings_data,
+                            "updated_at": time.time(),
+                        }
+                    },
+                    upsert=True,
                 )
             except Exception as e:
                 logger.error(f"Error saving settings to Mongo: {e}")
 
-    async def get_hierarchy(self, company_id: str) -> Dict[str, Any]:
+    async def get_hierarchy(self, company_id: str) -> dict[str, Any]:
         if self.is_connected and self.db is not None:
             try:
                 doc = await self.db.hierarchy.find_one({"company_id": company_id})
@@ -176,19 +184,25 @@ class MongoDBManager:
                 pass
         return self.local_store["hierarchy"].get(company_id, {})
 
-    async def save_hierarchy(self, company_id: str, hierarchy_data: Dict[str, Any]):
+    async def save_hierarchy(self, company_id: str, hierarchy_data: dict[str, Any]):
         self.local_store["hierarchy"][company_id] = hierarchy_data
         if self.is_connected and self.db is not None:
             try:
                 await self.db.hierarchy.update_one(
                     {"company_id": company_id},
-                    {"$set": {"company_id": company_id, "hierarchy": hierarchy_data, "updated_at": time.time()}},
-                    upsert=True
+                    {
+                        "$set": {
+                            "company_id": company_id,
+                            "hierarchy": hierarchy_data,
+                            "updated_at": time.time(),
+                        }
+                    },
+                    upsert=True,
                 )
             except Exception as e:
                 logger.error(f"Error saving hierarchy to Mongo: {e}")
 
-    async def log_event(self, event_type: str, payload: Dict[str, Any]):
+    async def log_event(self, event_type: str, payload: dict[str, Any]):
         evt = {"type": event_type, "payload": payload, "timestamp": time.time()}
         self.local_store["events"].append(evt)
         if self.is_connected and self.db is not None:
@@ -196,5 +210,6 @@ class MongoDBManager:
                 await self.db.events.insert_one(evt)
             except Exception:
                 pass
+
 
 mongo_manager = MongoDBManager()

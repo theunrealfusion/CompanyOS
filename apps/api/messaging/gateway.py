@@ -1,10 +1,10 @@
-import asyncio
 import logging
-from typing import Dict, Any
+from typing import Any
+
 
 class MessageGateway:
     def __init__(self):
-        self.adapters: Dict[str, Any] = {}
+        self.adapters: dict[str, Any] = {}
         logging.info("Initialized Message Gateway")
 
     def register_adapter(self, name: str, adapter: Any):
@@ -16,5 +16,6 @@ class MessageGateway:
         # Identify session
         # Route to Agent Runtime or Workflow Engine
         return {"status": "routed", "message": message}
+
 
 gateway = MessageGateway()

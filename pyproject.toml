@@ -1,0 +1,46 @@
+[project]
+name = "companyos"
+version = "0.1.0"
+description = "Autonomous AI Company Operating System"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+exclude = [
+    ".git",
+    ".venv",
+    "venv",
+    "node_modules",
+    "apps/web",
+    "dist",
+    "build",
+    "__pycache__",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # Pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "UP",     # pyupgrade
+    "C4",     # flake8-comprehensions
+]
+
+ignore = [
+    "B008",   # Do not perform function call in argument defaults (FastAPI Depends/Body/Query)
+    "B904",   # Within an except clause, raise exceptions with raise ... from err
+    "E501",   # Line too long (formatting handled separately)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["apps", "packages", "adapters"]
+
+[tool.ruff.lint.per-file-ignores]
+"apps/api/migrations/*" = ["E402", "F401", "W291"]
+"apps/api/main.py" = ["E402"]

@@ -1,11 +1,12 @@
-import os
 import logging
-from typing import Dict, Any, List, Optional
-from fastapi import APIRouter, Body, HTTPException, Depends
+import os
+from typing import Any
+
+import httpx
+from fastapi import APIRouter, Body, Depends, HTTPException
+from openai import AsyncOpenAI
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from openai import AsyncOpenAI
-import httpx
 
 from apps.api.database.session import get_db
 from apps.api.models.organization import Company
@@ -15,11 +16,10 @@ router = APIRouter(prefix="/models", tags=["models"])
 
 DEFAULT_NVIDIA_ENDPOINT = "https://integrate.api.nvidia.com/v1"
 
+
 @router.get("/nvidia")
 async def get_nvidia_models(
-    endpoint: Optional[str] = None,
-    api_key: Optional[str] = None,
-    db: AsyncSession = Depends(get_db)
+    endpoint: str | None = None, api_key: str | None = None, db: AsyncSession = Depends(get_db)
 ):
     """
     Fetch all available models from NVIDIA NIM endpoint (build.nvidia.com).
@@ -48,8 +48,7 @@ async def get_nvidia_models(
 
 @router.post("/nvidia")
 async def post_nvidia_models(
-    payload: Dict[str, Any] = Body(...),
-    db: AsyncSession = Depends(get_db)
+    payload: dict[str, Any] = Body(...), db: AsyncSession = Depends(get_db)
 ):
     """
     Fetch all available models given an NVIDIA NIM endpoint and API key from payload.
@@ -70,13 +69,10 @@ async def post_nvidia_models(
     return await _fetch_models_from_endpoint(endpoint, api_key)
 
 
-async def _fetch_models_from_endpoint(endpoint: str, api_key: str) -> Dict[str, Any]:
+async def _fetch_models_from_endpoint(endpoint: str, api_key: str) -> dict[str, Any]:
     try:
         # We can use AsyncOpenAI or httpx directly
-        client = AsyncOpenAI(
-            base_url=endpoint,
-            api_key=api_key or "anonymous"
-        )
+        client = AsyncOpenAI(base_url=endpoint, api_key=api_key or "anonymous")
         model_list = await client.models.list()
         raw_models = model_list.data
 
@@ -93,13 +89,15 @@ async def _fetch_models_from_endpoint(endpoint: str, api_key: str) -> Dict[str, 
                 for term in ["ultra", "nemotron", "deepseek-r1", "reason", "r1"]
             )
 
-            processed.append({
-                "id": model_id,
-                "name": model_id,
-                "owned_by": owned_by,
-                "created": created,
-                "supports_thinking": supports_thinking,
-            })
+            processed.append(
+                {
+                    "id": model_id,
+                    "name": model_id,
+                    "owned_by": owned_by,
+                    "created": created,
+                    "supports_thinking": supports_thinking,
+                }
+            )
 
         # Sort alphabetically with reasoning / flagship models first
         def sort_key(item):
@@ -122,7 +120,7 @@ async def _fetch_models_from_endpoint(endpoint: str, api_key: str) -> Dict[str, 
             "status": "success",
             "endpoint": endpoint,
             "count": len(processed),
-            "models": processed
+            "models": processed,
         }
     except Exception as e:
         logger.error(f"Failed to fetch models from NVIDIA NIM at {endpoint}: {e}")
@@ -134,17 +132,22 @@ async def _fetch_models_from_endpoint(endpoint: str, api_key: str) -> Dict[str, 
                 if res.status_code == 200:
                     data = res.json()
                     models_data = data.get("data", [])
-                    processed = [{
-                        "id": m.get("id"),
-                        "name": m.get("id"),
-                        "owned_by": m.get("owned_by", ""),
-                        "supports_thinking": "nemotron" in m.get("id", "").lower() or "ultra" in m.get("id", "").lower()
-                    } for m in models_data if "id" in m]
+                    processed = [
+                        {
+                            "id": m.get("id"),
+                            "name": m.get("id"),
+                            "owned_by": m.get("owned_by", ""),
+                            "supports_thinking": "nemotron" in m.get("id", "").lower()
+                            or "ultra" in m.get("id", "").lower(),
+                        }
+                        for m in models_data
+                        if "id" in m
+                    ]
                     return {
                         "status": "success",
                         "endpoint": endpoint,
                         "count": len(processed),
-                        "models": processed
+                        "models": processed,
                     }
                 else:
                     return {
@@ -152,7 +155,7 @@ async def _fetch_models_from_endpoint(endpoint: str, api_key: str) -> Dict[str, 
                         "endpoint": endpoint,
                         "count": 0,
                         "error": f"HTTP {res.status_code}: {res.text[:200]}",
-                        "models": []
+                        "models": [],
                     }
         except Exception as http_err:
             return {
@@ -160,12 +163,12 @@ async def _fetch_models_from_endpoint(endpoint: str, api_key: str) -> Dict[str, 
                 "endpoint": endpoint,
                 "count": 0,
                 "error": str(http_err),
-                "models": []
+                "models": [],
             }
 
 
 @router.post("/nvidia/test")
-async def test_nvidia_model(payload: Dict[str, Any] = Body(...)):
+async def test_nvidia_model(payload: dict[str, Any] = Body(...)):
     """
     Test generating completions using NVIDIA NIM endpoint.
     Implements streaming reasoning and content tokens as requested.
@@ -182,7 +185,7 @@ async def test_nvidia_model(payload: Dict[str, Any] = Body(...)):
     if not api_key:
         raise HTTPException(
             status_code=400,
-            detail="NVIDIA API Key is required to test inference on build.nvidia.com"
+            detail="NVIDIA API Key is required to test inference on build.nvidia.com",
         )
 
     try:
@@ -199,7 +202,7 @@ async def test_nvidia_model(payload: Dict[str, Any] = Body(...)):
             top_p=top_p,
             max_tokens=max_tokens,
             extra_body=extra_body if extra_body else None,
-            stream=True
+            stream=True,
         )
 
         reasoning_tokens = []
@@ -223,12 +226,8 @@ async def test_nvidia_model(payload: Dict[str, Any] = Body(...)):
             "model": model,
             "reasoning": full_reasoning,
             "content": full_content,
-            "has_thinking": len(reasoning_tokens) > 0
+            "has_thinking": len(reasoning_tokens) > 0,
         }
     except Exception as e:
         logger.error(f"Error testing NVIDIA model {model}: {e}")
-        return {
-            "status": "error",
-            "model": model,
-            "error": str(e)
-        }
+        return {"status": "error", "model": model, "error": str(e)}

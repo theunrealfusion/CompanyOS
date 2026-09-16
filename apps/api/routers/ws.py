@@ -1,13 +1,13 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 import json
-import asyncio
-from typing import List
+
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 router = APIRouter(tags=["websocket"])
 
+
 class ConnectionManager:
     def __init__(self):
-        self.active_connections: List[WebSocket] = []
+        self.active_connections: list[WebSocket] = []
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
@@ -23,7 +23,9 @@ class ConnectionManager:
             except Exception:
                 pass
 
+
 manager = ConnectionManager()
+
 
 @router.websocket("/ws/events")
 async def websocket_endpoint(websocket: WebSocket):
@@ -35,6 +37,7 @@ async def websocket_endpoint(websocket: WebSocket):
             await manager.broadcast(f"Echo: {data}")
     except WebSocketDisconnect:
         manager.disconnect(websocket)
+
 
 # Helper to publish events
 async def publish_event(event_type: str, payload: dict):

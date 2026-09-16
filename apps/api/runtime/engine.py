@@ -1,33 +1,37 @@
-import os
 import logging
-import asyncio
-import httpx
-from datetime import datetime
-from typing import Dict, Any, Optional
-from sqlalchemy.future import select
-from sqlalchemy.ext.asyncio import AsyncSession
+import os
 import uuid
+from datetime import datetime
+from typing import Any
 
-from apps.api.models.organization import Company
-from apps.api.models.agent import Agent, Task
-from apps.api.models.event import Event, Approval, FinancialTransaction
-from apps.api.routers.ws import publish_event
-from apps.api.database.mongodb import mongo_manager
-
+import httpx
 from openai import AsyncOpenAI
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+
+from apps.api.database.mongodb import mongo_manager
+from apps.api.database.session import async_session
+from apps.api.models.agent import Agent, Task
+from apps.api.models.event import Approval, Event
+from apps.api.models.organization import Company
+from apps.api.routers.ws import publish_event
 
 logger = logging.getLogger("companyos.runtime")
 
-async def call_model_provider(settings: Dict[str, Any], prompt: str, system_instruction: str = "") -> str:
+
+async def call_model_provider(
+    settings: dict[str, Any], prompt: str, system_instruction: str = ""
+) -> str:
     """
     Calls the configured LLM provider (NVIDIA NIM, Gemini, OpenAI, Anthropic, Ollama)
     If no API key or provider is reachable, returns an honest deterministic reasoning summary.
     """
     nvidia_key = settings.get("nvidia_api_key", "").strip() or os.getenv("NVIDIA_API_KEY", "")
-    nim_endpoint = settings.get("nvidia_nim_endpoint", "").strip() or "https://integrate.api.nvidia.com/v1"
+    nim_endpoint = (
+        settings.get("nvidia_nim_endpoint", "").strip() or "https://integrate.api.nvidia.com/v1"
+    )
     gemini_key = settings.get("gemini_api_key", "").strip()
     openai_key = settings.get("openai_api_key", "").strip()
-    anthropic_key = settings.get("anthropic_api_key", "").strip()
     ollama_endpoint = settings.get("ollama_vllm_url", "").strip()
     default_model = settings.get("default_model", "gemini-1.5-pro")
 
@@ -41,11 +45,17 @@ async def call_model_provider(settings: Dict[str, Any], prompt: str, system_inst
             messages.append({"role": "user", "content": prompt})
 
             # Check for reasoning / thinking support
-            is_reasoning = any(x in default_model.lower() for x in ["ultra", "nemotron", "deepseek-r1", "reason"])
-            extra_body = {"chat_template_kwargs": {"enable_thinking": True}} if is_reasoning else None
+            is_reasoning = any(
+                x in default_model.lower() for x in ["ultra", "nemotron", "deepseek-r1", "reason"]
+            )
+            extra_body = (
+                {"chat_template_kwargs": {"enable_thinking": True}} if is_reasoning else None
+            )
 
             # Fallback to flagship nemotron model if default_model is not an nvidia format
-            model_to_use = default_model if "/" in default_model else "nvidia/nemotron-3-ultra-550b-a55b"
+            model_to_use = (
+                default_model if "/" in default_model else "nvidia/nemotron-3-ultra-550b-a55b"
+            )
 
             stream = await client.chat.completions.create(
                 model=model_to_use,
@@ -53,7 +63,7 @@ async def call_model_provider(settings: Dict[str, Any], prompt: str, system_inst
                 temperature=float(settings.get("temperature", 0.7)),
                 max_tokens=int(settings.get("max_tokens", 4096)),
                 extra_body=extra_body,
-                stream=True
+                stream=True,
             )
 
             reasoning_parts = []
@@ -85,13 +95,15 @@ async def call_model_provider(settings: Dict[str, Any], prompt: str, system_inst
             try:
                 model_name = "gemini-1.5-pro" if "pro" in default_model else "gemini-1.5-flash"
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={gemini_key}"
-                full_prompt = f"{system_instruction}\n\nObjective: {prompt}" if system_instruction else prompt
+                full_prompt = (
+                    f"{system_instruction}\n\nObjective: {prompt}" if system_instruction else prompt
+                )
                 payload = {
                     "contents": [{"parts": [{"text": full_prompt}]}],
                     "generationConfig": {
                         "temperature": float(settings.get("temperature", 0.2)),
-                        "maxOutputTokens": int(settings.get("max_tokens", 2048))
-                    }
+                        "maxOutputTokens": int(settings.get("max_tokens", 2048)),
+                    },
                 }
                 res = await http_client.post(url, json=payload)
                 if res.status_code == 200:
@@ -118,7 +130,9 @@ async def call_model_provider(settings: Dict[str, Any], prompt: str, system_inst
                     "messages": messages,
                     "temperature": float(settings.get("temperature", 0.2)),
                 }
-                res = await http_client.post(url, headers={"Authorization": f"Bearer {openai_key}"}, json=payload)
+                res = await http_client.post(
+                    url, headers={"Authorization": f"Bearer {openai_key}"}, json=payload
+                )
                 if res.status_code == 200:
                     data = res.json()
                     return data["choices"][0]["message"]["content"].strip()
@@ -133,7 +147,7 @@ async def call_model_provider(settings: Dict[str, Any], prompt: str, system_inst
                 payload = {
                     "model": default_model,
                     "messages": [{"role": "user", "content": f"{system_instruction}\n\n{prompt}"}],
-                    "temperature": float(settings.get("temperature", 0.2))
+                    "temperature": float(settings.get("temperature", 0.2)),
                 }
                 res = await http_client.post(url, json=payload)
                 if res.status_code == 200:
@@ -149,14 +163,15 @@ async def call_model_provider(settings: Dict[str, Any], prompt: str, system_inst
         f"[Notice: No active LLM API Key was configured. To enable live neural reasoning, configure NVIDIA NIM, Gemini, or OpenAI API Key in Settings.]"
     )
 
+
 async def execute_task(
     company_id: uuid.UUID,
     agent_id: str,
     task_title: str,
     db: AsyncSession,
-    settings: Dict[str, Any],
-    creator_role: str = "founder"
-) -> Dict[str, Any]:
+    settings: dict[str, Any],
+    creator_role: str = "founder",
+) -> dict[str, Any]:
     """
     Executes a real task: records it in DB, updates agent state to WORKING,
     calls the model provider, records the result, logs the event, and updates state to IDLE.
@@ -179,7 +194,7 @@ async def execute_task(
             name=f"Agent {agent_id.upper()}",
             role=agent_id.capitalize(),
             status="IDLE",
-            config={"model": settings.get("default_model", "gemini-1.5-pro")}
+            config={"model": settings.get("default_model", "gemini-1.5-pro")},
         )
         db.add(agent)
         await db.commit()
@@ -187,28 +202,19 @@ async def execute_task(
 
     # 2. Update agent to WORKING and save task
     agent.status = "WORKING"
-    task = Task(
-        creator_agent_id=None,
-        assignee_id=agent.id,
-        title=task_title,
-        status="IN_PROGRESS"
-    )
+    task = Task(creator_agent_id=None, assignee_id=agent.id, title=task_title, status="IN_PROGRESS")
     db.add(task)
     await db.commit()
     await db.refresh(task)
 
     # 3. Publish real events
-    await publish_event("AgentStatusChanged", {
-        "agent": agent_id,
-        "status": "WORKING",
-        "task": task_title
-    })
-    await publish_event("TaskCreated", {
-        "from": creator_role,
-        "to": agent_id,
-        "task": task_title,
-        "task_id": str(task.id)
-    })
+    await publish_event(
+        "AgentStatusChanged", {"agent": agent_id, "status": "WORKING", "task": task_title}
+    )
+    await publish_event(
+        "TaskCreated",
+        {"from": creator_role, "to": agent_id, "task": task_title, "task_id": str(task.id)},
+    )
 
     # 4. Call Model Provider with agent persona
     system_instruction = f"You are the {agent.role} of CompanyOS. Perform this task with high precision and executive clarity."
@@ -226,41 +232,37 @@ async def execute_task(
         agent_id=agent.id,
         task_id=task.id,
         event_type="TaskCompleted",
-        payload={"title": task_title, "result": result_text[:200]}
+        payload={"title": task_title, "result": result_text[:200]},
     )
     db.add(event)
     await db.commit()
 
     # Also log to MongoDB if connected
-    await mongo_manager.log_event("TaskCompleted", {
-        "company_id": str(company_id),
-        "agent": agent_id,
-        "title": task_title,
-        "result": result_text[:200]
-    })
+    await mongo_manager.log_event(
+        "TaskCompleted",
+        {
+            "company_id": str(company_id),
+            "agent": agent_id,
+            "title": task_title,
+            "result": result_text[:200],
+        },
+    )
 
     # 7. Publish completion events
-    await publish_event("AgentStatusChanged", {
-        "agent": agent_id,
-        "status": "IDLE",
-        "task": None
-    })
-    await publish_event("TaskCompleted", {
-        "task_id": str(task.id),
-        "agent": agent_id,
-        "title": task_title,
-        "result": result_text
-    })
+    await publish_event("AgentStatusChanged", {"agent": agent_id, "status": "IDLE", "task": None})
+    await publish_event(
+        "TaskCompleted",
+        {"task_id": str(task.id), "agent": agent_id, "title": task_title, "result": result_text},
+    )
 
     return {
         "task_id": str(task.id),
         "agent_id": str(agent.id),
         "status": "COMPLETED",
         "title": task_title,
-        "result": result_text
+        "result": result_text,
     }
 
-from apps.api.database.session import async_session
 
 async def run_autonomous_business_cycle(company_id_str: str):
     """
@@ -285,32 +287,32 @@ async def run_autonomous_business_cycle(company_id_str: str):
 
         # Step 1: CEO Strategic Evaluation
         await execute_task(
-            c_uuid, 
-            "ceo", 
-            f"Review market trends and company mission ('{mission}') to prioritize top autonomous revenue streams", 
-            db, 
-            settings, 
-            "founder"
+            c_uuid,
+            "ceo",
+            f"Review market trends and company mission ('{mission}') to prioritize top autonomous revenue streams",
+            db,
+            settings,
+            "founder",
         )
 
         # Step 2: Strategy Director Market Research
         await execute_task(
-            c_uuid, 
-            "strategy", 
-            f"Conduct competitive market research and financial feasibility scoring for high-margin SaaS automation in {company_name}", 
-            db, 
-            settings, 
-            "ceo"
+            c_uuid,
+            "strategy",
+            f"Conduct competitive market research and financial feasibility scoring for high-margin SaaS automation in {company_name}",
+            db,
+            settings,
+            "ceo",
         )
 
         # Step 3: Product Director PRD Synthesis
         await execute_task(
-            c_uuid, 
-            "product", 
-            "Draft concise Product Requirements Document (PRD) specifying API contracts, UX flows, and pricing tiers", 
-            db, 
-            settings, 
-            "strategy"
+            c_uuid,
+            "product",
+            "Draft concise Product Requirements Document (PRD) specifying API contracts, UX flows, and pricing tiers",
+            db,
+            settings,
+            "strategy",
         )
 
         # Step 4: Create Real Approval Request if budget exceeds threshold
@@ -322,35 +324,38 @@ async def run_autonomous_business_cycle(company_id_str: str):
             cost="₹3,500",
             expected_return="₹15,000 - ₹35,000 ARR",
             risk="LOW",
-            status="PENDING"
+            status="PENDING",
         )
         db.add(approval)
         await db.commit()
 
-        await publish_event("ApprovalRequired", {
-            "id": str(approval.id),
-            "title": approval.title,
-            "cost": approval.cost,
-            "requester": approval.requester,
-            "status": "PENDING"
-        })
+        await publish_event(
+            "ApprovalRequired",
+            {
+                "id": str(approval.id),
+                "title": approval.title,
+                "cost": approval.cost,
+                "requester": approval.requester,
+                "status": "PENDING",
+            },
+        )
 
         # Step 5: Engineering Director Architecture & Deployment
         await execute_task(
-            c_uuid, 
-            "engineering", 
-            "Implement core API router endpoints, verify schema migrations, and execute end-to-end integration test suite", 
-            db, 
-            settings, 
-            "product"
+            c_uuid,
+            "engineering",
+            "Implement core API router endpoints, verify schema migrations, and execute end-to-end integration test suite",
+            db,
+            settings,
+            "product",
         )
 
         # Step 6: Revenue Director Monetization & Customer Pipeline
         await execute_task(
-            c_uuid, 
-            "revenue", 
-            "Audit inbound customer conversion pipeline, configure stripe webhook billing, and reconcile transaction ledger", 
-            db, 
-            settings, 
-            "engineering"
+            c_uuid,
+            "revenue",
+            "Audit inbound customer conversion pipeline, configure stripe webhook billing, and reconcile transaction ledger",
+            db,
+            settings,
+            "engineering",
         )

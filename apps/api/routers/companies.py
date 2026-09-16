@@ -1,14 +1,20 @@
-from fastapi import APIRouter, Depends, HTTPException, Body
+import asyncio
+import logging
+import os
+import uuid
+from typing import Any
+
+from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from typing import Dict, Any, Optional
-import uuid
-import os
 
+from apps.api.database.mongodb import mongo_manager
 from apps.api.database.session import get_db
 from apps.api.models.organization import Company
-import asyncio
 from apps.api.routers.ws import publish_event
+from apps.api.runtime.engine import execute_task, run_autonomous_business_cycle
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/companies", tags=["companies"])
 
@@ -27,20 +33,22 @@ DEFAULT_SETTINGS = {
     # Telegram Message Gateway Settings
     "telegram_bot_token": "",
     "telegram_allowed_users": "@founder, @ceo",
-    "telegram_mode": "polling", # polling | webhook
+    "telegram_mode": "polling",  # polling | webhook
     "telegram_topic_routing": True,
     # Economics & Governance
     "currency": "INR (₹)",
     "monthly_budget_cap": "500000",
     "human_approval_threshold": "5000",
     "emergency_spend_limit": "25000",
-    "autonomous_mode": "SUPERVISED", # HUMAN_LED, AI_ASSISTED, SUPERVISED, BOUNDED, FULL_AUTONOMOUS
+    "autonomous_mode": "SUPERVISED",  # HUMAN_LED, AI_ASSISTED, SUPERVISED, BOUNDED, FULL_AUTONOMOUS
 }
+
 
 @router.get("/")
 async def get_companies(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Company))
     return result.scalars().all()
+
 
 @router.post("/")
 async def create_company(name: str, mission: str = "", db: AsyncSession = Depends(get_db)):
@@ -49,6 +57,7 @@ async def create_company(name: str, mission: str = "", db: AsyncSession = Depend
     await db.commit()
     await db.refresh(company)
     return company
+
 
 @router.get("/{company_id}")
 async def get_company(company_id: str, db: AsyncSession = Depends(get_db)):
@@ -62,6 +71,7 @@ async def get_company(company_id: str, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Company not found")
     return company
 
+
 @router.get("/{company_id}/settings")
 async def get_company_settings(company_id: str, db: AsyncSession = Depends(get_db)):
     try:
@@ -72,14 +82,17 @@ async def get_company_settings(company_id: str, db: AsyncSession = Depends(get_d
     company = result.scalar_one_or_none()
     if not company:
         raise HTTPException(status_code=404, detail="Company not found")
-    
+
     settings = dict(DEFAULT_SETTINGS)
     if company.settings:
         settings.update(company.settings)
     return settings
 
+
 @router.put("/{company_id}/settings")
-async def update_company_settings(company_id: str, payload: Dict[str, Any] = Body(...), db: AsyncSession = Depends(get_db)):
+async def update_company_settings(
+    company_id: str, payload: dict[str, Any] = Body(...), db: AsyncSession = Depends(get_db)
+):
     try:
         c_uuid = uuid.UUID(company_id)
     except ValueError:
@@ -88,19 +101,19 @@ async def update_company_settings(company_id: str, payload: Dict[str, Any] = Bod
     company = result.scalar_one_or_none()
     if not company:
         raise HTTPException(status_code=404, detail="Company not found")
-    
+
     current_settings = dict(company.settings or DEFAULT_SETTINGS)
     current_settings.update(payload)
     company.settings = current_settings
-    
+
     # Also update company name or mission if provided
-    if "company_name" in payload and payload["company_name"]:
+    if payload.get("company_name"):
         company.name = payload["company_name"]
-    if "company_mission" in payload and payload["company_mission"]:
+    if payload.get("company_mission"):
         company.mission = payload["company_mission"]
 
     # If mongodb_uri was updated, connect to it
-    if "mongodb_uri" in payload and payload["mongodb_uri"]:
+    if payload.get("mongodb_uri"):
         try:
             await mongo_manager.connect(payload["mongodb_uri"].strip())
         except Exception as e:
@@ -111,6 +124,7 @@ async def update_company_settings(company_id: str, payload: Dict[str, Any] = Bod
 
     await publish_event("SettingsUpdated", {"company_id": company_id, "settings": current_settings})
     return {"status": "success", "settings": current_settings}
+
 
 @router.get("/{company_id}/hierarchy")
 async def get_company_hierarchy(company_id: str, db: AsyncSession = Depends(get_db)):
@@ -124,8 +138,11 @@ async def get_company_hierarchy(company_id: str, db: AsyncSession = Depends(get_
         raise HTTPException(status_code=404, detail="Company not found")
     return company.org_hierarchy or {}
 
+
 @router.put("/{company_id}/hierarchy")
-async def update_company_hierarchy(company_id: str, payload: Dict[str, Any] = Body(...), db: AsyncSession = Depends(get_db)):
+async def update_company_hierarchy(
+    company_id: str, payload: dict[str, Any] = Body(...), db: AsyncSession = Depends(get_db)
+):
     try:
         c_uuid = uuid.UUID(company_id)
     except ValueError:
@@ -134,16 +151,17 @@ async def update_company_hierarchy(company_id: str, payload: Dict[str, Any] = Bo
     company = result.scalar_one_or_none()
     if not company:
         raise HTTPException(status_code=404, detail="Company not found")
-    
+
     company.org_hierarchy = payload
     await db.commit()
     await db.refresh(company)
 
-    await publish_event("OrgHierarchyUpdated", {"company_id": company_id, "nodes_count": len(payload.get("nodes", []))})
+    await publish_event(
+        "OrgHierarchyUpdated",
+        {"company_id": company_id, "nodes_count": len(payload.get("nodes", []))},
+    )
     return {"status": "success", "hierarchy": company.org_hierarchy}
 
-from apps.api.runtime.engine import run_autonomous_business_cycle, execute_task
-from apps.api.database.mongodb import mongo_manager
 
 @router.post("/{company_id}/simulate")
 async def simulate_company(company_id: str, db: AsyncSession = Depends(get_db)):
@@ -151,34 +169,45 @@ async def simulate_company(company_id: str, db: AsyncSession = Depends(get_db)):
     if not mongo_manager.is_connected:
         comp_res = await db.execute(select(Company).where(Company.id == uuid.UUID(company_id)))
         comp = comp_res.scalar_one_or_none()
-        saved_uri = comp.settings.get("mongodb_uri", "").strip() if (comp and comp.settings) else os.getenv("MONGODB_URI", "").strip()
+        saved_uri = (
+            comp.settings.get("mongodb_uri", "").strip()
+            if (comp and comp.settings)
+            else os.getenv("MONGODB_URI", "").strip()
+        )
         if saved_uri:
             await mongo_manager.connect(saved_uri)
 
     if not mongo_manager.is_connected:
         raise HTTPException(
             status_code=400,
-            detail="Required setup incomplete: Cloud MongoDB Atlas is not connected. Please configure your Atlas connection string before running autonomous company cycles."
+            detail="Required setup incomplete: Cloud MongoDB Atlas is not connected. Please configure your Atlas connection string before running autonomous company cycles.",
         )
 
     # Run genuine multi-agent autonomous execution with real tasks, model router, and DB events
     asyncio.create_task(run_autonomous_business_cycle(company_id))
     return {"status": "started", "company_id": company_id, "mode": "GENUINE_EXECUTION"}
 
+
 @router.post("/{company_id}/task")
-async def dispatch_company_task(company_id: str, payload: Dict[str, Any] = Body(...), db: AsyncSession = Depends(get_db)):
+async def dispatch_company_task(
+    company_id: str, payload: dict[str, Any] = Body(...), db: AsyncSession = Depends(get_db)
+):
     # Ensure MongoDB setup is completed before executing directives
     if not mongo_manager.is_connected:
         comp_res = await db.execute(select(Company).where(Company.id == uuid.UUID(company_id)))
         comp = comp_res.scalar_one_or_none()
-        saved_uri = comp.settings.get("mongodb_uri", "").strip() if (comp and comp.settings) else os.getenv("MONGODB_URI", "").strip()
+        saved_uri = (
+            comp.settings.get("mongodb_uri", "").strip()
+            if (comp and comp.settings)
+            else os.getenv("MONGODB_URI", "").strip()
+        )
         if saved_uri:
             await mongo_manager.connect(saved_uri)
 
     if not mongo_manager.is_connected:
         raise HTTPException(
             status_code=400,
-            detail="Required setup incomplete: Cloud MongoDB Atlas is not connected. Please configure your Atlas connection string before dispatching tasks."
+            detail="Required setup incomplete: Cloud MongoDB Atlas is not connected. Please configure your Atlas connection string before dispatching tasks.",
         )
 
     agent_id = payload.get("agent", "ceo")
@@ -188,4 +217,3 @@ async def dispatch_company_task(company_id: str, payload: Dict[str, Any] = Body(
     settings = comp.settings if comp else {}
     result = await execute_task(uuid.UUID(company_id), agent_id, task_title, db, settings)
     return result
-
