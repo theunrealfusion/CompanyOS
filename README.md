@@ -63,7 +63,7 @@ cd CompanyOS
 ```
 
 ### 2. Start Infrastructure (PostgreSQL + Redis)
-
+`
 ```bash
 docker-compose up -d
 ```
@@ -82,7 +82,7 @@ pip install -r apps/api/requirements.txt # (or editable package install)
 python apps/api/main.py
 ```
 
-The API server will run at `http://localhost:8000`.
+The API server will run at `http://localhost:8003`.
 
 ### 5. Setup & Start Visual Command Center (Frontend)
 

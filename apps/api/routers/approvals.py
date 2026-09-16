@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, Body
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
-from typing import List, Dict, Any, Optional
 import uuid
 from datetime import datetime
+from typing import Any
+
+from fastapi import APIRouter, Body, Depends, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
 
 from apps.api.database.session import get_db
 from apps.api.models.event import Approval
@@ -12,8 +13,9 @@ from apps.api.routers.ws import publish_event
 
 router = APIRouter(prefix="/approvals", tags=["approvals"])
 
+
 @router.get("/")
-async def get_approvals(company_id: Optional[str] = None, db: AsyncSession = Depends(get_db)):
+async def get_approvals(company_id: str | None = None, db: AsyncSession = Depends(get_db)):
     query = select(Approval).order_by(Approval.created_at.desc())
     if company_id:
         try:
@@ -26,8 +28,9 @@ async def get_approvals(company_id: Optional[str] = None, db: AsyncSession = Dep
     approvals = result.scalars().all()
     return approvals
 
+
 @router.post("/")
-async def create_approval(payload: Dict[str, Any] = Body(...), db: AsyncSession = Depends(get_db)):
+async def create_approval(payload: dict[str, Any] = Body(...), db: AsyncSession = Depends(get_db)):
     company_id = payload.get("company_id")
     if not company_id:
         comp_res = await db.execute(select(Company))
@@ -46,23 +49,29 @@ async def create_approval(payload: Dict[str, Any] = Body(...), db: AsyncSession 
         cost=payload.get("cost", "₹0"),
         expected_return=payload.get("expected_return", "N/A"),
         risk=payload.get("risk", "LOW"),
-        status="PENDING"
+        status="PENDING",
     )
     db.add(approval)
     await db.commit()
     await db.refresh(approval)
 
-    await publish_event("ApprovalRequired", {
-        "id": str(approval.id),
-        "title": approval.title,
-        "cost": approval.cost,
-        "requester": approval.requester,
-        "status": "PENDING"
-    })
+    await publish_event(
+        "ApprovalRequired",
+        {
+            "id": str(approval.id),
+            "title": approval.title,
+            "cost": approval.cost,
+            "requester": approval.requester,
+            "status": "PENDING",
+        },
+    )
     return approval
 
+
 @router.post("/{approval_id}/decision")
-async def decide_approval(approval_id: str, payload: Dict[str, Any] = Body(...), db: AsyncSession = Depends(get_db)):
+async def decide_approval(
+    approval_id: str, payload: dict[str, Any] = Body(...), db: AsyncSession = Depends(get_db)
+):
     try:
         a_uuid = uuid.UUID(approval_id)
     except ValueError:
@@ -82,10 +91,8 @@ async def decide_approval(approval_id: str, payload: Dict[str, Any] = Body(...),
     await db.commit()
     await db.refresh(approval)
 
-    await publish_event("ApprovalDecided", {
-        "id": str(approval.id),
-        "title": approval.title,
-        "status": decision
-    })
+    await publish_event(
+        "ApprovalDecided", {"id": str(approval.id), "title": approval.title, "status": decision}
+    )
 
     return approval

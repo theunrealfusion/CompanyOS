@@ -158,6 +158,20 @@ export default function Home() {
     fetchCompanyAndHierarchy();
   }, [setNodes, setEdges]);
 
+  // Delete Agent from Hierarchy
+  const handleDeleteAgent = useCallback((agentId: string) => {
+    setNodes((nds) => nds.filter((n) => n.id !== agentId));
+    setEdges((eds) => eds.filter((e) => e.source !== agentId && e.target !== agentId));
+    setAgents((prev) => {
+      const copy = { ...prev };
+      delete copy[agentId];
+      return copy;
+    });
+
+    setBanner(`Agent removed from organization.`);
+    setTimeout(() => setBanner(null), 3000);
+  }, [setNodes, setEdges, setAgents, setBanner]);
+
   // Update nodes with handlers & restructuring flag
   useEffect(() => {
     setNodes((nds) =>
@@ -378,20 +392,6 @@ export default function Home() {
     }
 
     setTimeout(() => setBanner(null), 3500);
-  };
-
-  // Delete Agent from Hierarchy
-  const handleDeleteAgent = (agentId: string) => {
-    setNodes((nds) => nds.filter((n) => n.id !== agentId));
-    setEdges((eds) => eds.filter((e) => e.source !== agentId && e.target !== agentId));
-    setAgents((prev) => {
-      const copy = { ...prev };
-      delete copy[agentId];
-      return copy;
-    });
-
-    setBanner(`Agent removed from organization.`);
-    setTimeout(() => setBanner(null), 3000);
   };
 
   // Reset / Auto-layout Graph
