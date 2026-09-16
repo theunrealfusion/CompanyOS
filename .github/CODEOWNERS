@@ -1,16 +1,16 @@
 # Global Owners
-*       @theunrealfusion
+*       @kshvsharma960
 
 # Monorepo Applications
-/apps/api/        @theunrealfusion
-/apps/web/        @theunrealfusion
-/apps/worker/     @theunrealfusion
+/apps/api/        @kshvsharma960
+/apps/web/        @kshvsharma960
+/apps/worker/     @kshvsharma960
 
 # Core Packages & SDKs
-/packages/        @theunrealfusion
+/packages/        @kshvsharma960
 
 # Integration Adapters
-/adapters/        @theunrealfusion
+/adapters/        @kshvsharma960
 
 # GitHub Workflows & Templates
-/.github/         @theunrealfusion
+/.github/         @kshvsharma960
