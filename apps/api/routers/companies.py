@@ -8,7 +8,6 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from apps.api.database.mongodb import mongo_manager
 from apps.api.database.session import get_db
 from apps.api.models.organization import Company
 from apps.api.routers.ws import publish_event
@@ -112,13 +111,6 @@ async def update_company_settings(
     if payload.get("company_mission"):
         company.mission = payload["company_mission"]
 
-    # If mongodb_uri was updated, connect to it
-    if payload.get("mongodb_uri"):
-        try:
-            await mongo_manager.connect(payload["mongodb_uri"].strip())
-        except Exception as e:
-            logger.warning(f"Could not connect to updated mongodb_uri: {e}")
-
     await db.commit()
     await db.refresh(company)
 
@@ -165,24 +157,6 @@ async def update_company_hierarchy(
 
 @router.post("/{company_id}/simulate")
 async def simulate_company(company_id: str, db: AsyncSession = Depends(get_db)):
-    # Ensure MongoDB setup is completed before launching autonomous operations
-    if not mongo_manager.is_connected:
-        comp_res = await db.execute(select(Company).where(Company.id == uuid.UUID(company_id)))
-        comp = comp_res.scalar_one_or_none()
-        saved_uri = (
-            comp.settings.get("mongodb_uri", "").strip()
-            if (comp and comp.settings)
-            else os.getenv("MONGODB_URI", "").strip()
-        )
-        if saved_uri:
-            await mongo_manager.connect(saved_uri)
-
-    if not mongo_manager.is_connected:
-        raise HTTPException(
-            status_code=400,
-            detail="Required setup incomplete: Cloud MongoDB Atlas is not connected. Please configure your Atlas connection string before running autonomous company cycles.",
-        )
-
     # Run genuine multi-agent autonomous execution with real tasks, model router, and DB events
     asyncio.create_task(run_autonomous_business_cycle(company_id))
     return {"status": "started", "company_id": company_id, "mode": "GENUINE_EXECUTION"}
@@ -192,24 +166,6 @@ async def simulate_company(company_id: str, db: AsyncSession = Depends(get_db)):
 async def dispatch_company_task(
     company_id: str, payload: dict[str, Any] = Body(...), db: AsyncSession = Depends(get_db)
 ):
-    # Ensure MongoDB setup is completed before executing directives
-    if not mongo_manager.is_connected:
-        comp_res = await db.execute(select(Company).where(Company.id == uuid.UUID(company_id)))
-        comp = comp_res.scalar_one_or_none()
-        saved_uri = (
-            comp.settings.get("mongodb_uri", "").strip()
-            if (comp and comp.settings)
-            else os.getenv("MONGODB_URI", "").strip()
-        )
-        if saved_uri:
-            await mongo_manager.connect(saved_uri)
-
-    if not mongo_manager.is_connected:
-        raise HTTPException(
-            status_code=400,
-            detail="Required setup incomplete: Cloud MongoDB Atlas is not connected. Please configure your Atlas connection string before dispatching tasks.",
-        )
-
     agent_id = payload.get("agent", "ceo")
     task_title = payload.get("task", "Analyze company performance")
     comp_res = await db.execute(select(Company).where(Company.id == uuid.UUID(company_id)))

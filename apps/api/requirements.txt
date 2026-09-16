@@ -5,13 +5,11 @@ fastapi>=0.110.0
 uvicorn[standard]>=0.28.0
 websockets>=12.0
 
-# Database & Migrations (PostgreSQL + pgvector + MongoDB)
+# Database & Migrations (PostgreSQL + pgvector)
 sqlalchemy>=2.0.28
 asyncpg>=0.29.0
 alembic>=1.13.1
 pgvector>=0.2.5
-pymongo>=4.6.2
-motor>=3.3.2
 
 # LLM Providers & Networking
 openai>=1.14.0

@@ -9,7 +9,6 @@ from openai import AsyncOpenAI
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from apps.api.database.mongodb import mongo_manager
 from apps.api.database.session import async_session
 from apps.api.models.agent import Agent, Task
 from apps.api.models.event import Approval, Event
@@ -236,17 +235,6 @@ async def execute_task(
     )
     db.add(event)
     await db.commit()
-
-    # Also log to MongoDB if connected
-    await mongo_manager.log_event(
-        "TaskCompleted",
-        {
-            "company_id": str(company_id),
-            "agent": agent_id,
-            "title": task_title,
-            "result": result_text[:200],
-        },
-    )
 
     # 7. Publish completion events
     await publish_event("AgentStatusChanged", {"agent": agent_id, "status": "IDLE", "task": None})

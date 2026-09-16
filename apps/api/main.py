@@ -29,14 +29,12 @@ from apps.api.routers import (
     companies,
     metrics,
     models_router,
-    mongodb_router,
     system_router,
     ws,
 )
 
 app.include_router(agents.router, prefix="/api/v1")
 app.include_router(companies.router, prefix="/api/v1")
-app.include_router(mongodb_router.router, prefix="/api/v1")
 app.include_router(approvals.router, prefix="/api/v1")
 app.include_router(metrics.router, prefix="/api/v1")
 app.include_router(models_router.router, prefix="/api/v1")

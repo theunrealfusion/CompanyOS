@@ -24,11 +24,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 
-interface SettingsViewProps {
-  onMongoStatusChange?: (isConnected: boolean, latencyMs: number | null) => void;
-}
-
-export default function SettingsView({ onMongoStatusChange }: SettingsViewProps = {}) {
+export default function SettingsView() {
   const [apiUrl, setApiUrl] = useState('http://localhost:8003');
   const [apiStatus, setApiStatus] = useState<'testing' | 'online' | 'offline'>('online');
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
@@ -42,27 +38,6 @@ export default function SettingsView({ onMongoStatusChange }: SettingsViewProps 
   const [showOpenaiKey, setShowOpenaiKey] = useState(false);
   const [showAnthropicKey, setShowAnthropicKey] = useState(false);
   const [showTelegramToken, setShowTelegramToken] = useState(false);
-  const [showMongoUri, setShowMongoUri] = useState(false);
-
-  // NVIDIA NIM Models State
-  const [nvidiaModels, setNvidiaModels] = useState<Array<{ id: string; name: string; owned_by?: string; supports_thinking?: boolean }>>([]);
-  const [fetchingModels, setFetchingModels] = useState(false);
-  const [fetchModelsFeedback, setFetchModelsFeedback] = useState<{ message: string; isError: boolean } | null>(null);
-
-  // NVIDIA NIM Model Test State
-  const [testNvidiaModel, setTestNvidiaModel] = useState('nvidia/nemotron-3-ultra-550b-a55b');
-  const [testPrompt, setTestPrompt] = useState('Write a limerick about the wonders of GPU computing.');
-  const [testEnableThinking, setTestEnableThinking] = useState(true);
-  const [testingNvidia, setTestingNvidia] = useState(false);
-  const [testOutput, setTestOutput] = useState<{ reasoning: string; content: string } | null>(null);
-
-  // Cloud MongoDB State (Default database)
-  const [mongoUri, setMongoUri] = useState('');
-  const [mongoStatus, setMongoStatus] = useState<'CONNECTED' | 'DISCONNECTED' | 'NOT_CONFIGURED' | 'TESTING'>('NOT_CONFIGURED');
-  const [mongoLatency, setMongoLatency] = useState<number | null>(null);
-  const [mongoCollections, setMongoCollections] = useState<string[]>([]);
-  const [mongoTesting, setMongoTesting] = useState(false);
-  const [mongoFeedback, setMongoFeedback] = useState<{ message: string; isError: boolean } | null>(null);
 
   // Settings State
   const [settings, setSettings] = useState({
@@ -142,33 +117,10 @@ export default function SettingsView({ onMongoStatusChange }: SettingsViewProps 
           console.error("Could not fetch initial NVIDIA models", err);
         }
 
-        // Fetch real Cloud MongoDB Status on mount
-        try {
-          const mongoRes = await fetch(`${backendHost}/api/v1/mongodb/status`);
-          if (mongoRes.ok) {
-            const data = await mongoRes.json();
-            if (data.uri) setMongoUri(data.uri);
-            if (data.is_connected) {
-              setMongoStatus('CONNECTED');
-              setMongoLatency(data.latency_ms);
-              setMongoCollections(data.collections || []);
-              onMongoStatusChange?.(true, data.latency_ms);
-            } else {
-              setMongoStatus(data.status || 'NOT_CONFIGURED');
-              setMongoLatency(null);
-              setMongoCollections([]);
-              onMongoStatusChange?.(false, null);
-            }
-          }
-        } catch (err) {
-          setMongoStatus('DISCONNECTED');
-          setMongoLatency(null);
-          onMongoStatusChange?.(false, null);
-        }
       }
     };
     init();
-  }, [onMongoStatusChange]);
+  }, []);
 
   const testConnection = async () => {
     setApiStatus('testing');
@@ -189,57 +141,7 @@ export default function SettingsView({ onMongoStatusChange }: SettingsViewProps 
     }
   };
 
-  const testMongoConnection = async () => {
-    setMongoTesting(true);
-    setMongoFeedback(null);
-    try {
-      // If user typed a URI, send it to /api/v1/mongodb/connect; otherwise check current status
-      const trimmedUri = mongoUri.trim();
-      const endpoint = trimmedUri ? `${apiUrl}/api/v1/mongodb/connect` : `${apiUrl}/api/v1/mongodb/status`;
-      const options: RequestInit = trimmedUri 
-        ? {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ uri: trimmedUri })
-          }
-        : { method: 'GET' };
 
-      const res = await fetch(endpoint, options);
-      const data = await res.json();
-      
-      if (data.is_connected) {
-        setMongoStatus('CONNECTED');
-        setMongoLatency(data.latency_ms);
-        setMongoCollections(data.collections || []);
-        onMongoStatusChange?.(true, data.latency_ms);
-        const colCount = data.collections?.length || 0;
-        setMongoFeedback({
-          message: `Connected successfully to Cloud MongoDB Atlas (${data.database || 'companyos'}). Latency: ${data.latency_ms}ms. Collections: ${colCount > 0 ? data.collections.join(', ') : 'None yet'}.`,
-          isError: false
-        });
-      } else {
-        setMongoStatus(data.status || 'DISCONNECTED');
-        setMongoLatency(null);
-        setMongoCollections([]);
-        onMongoStatusChange?.(false, null);
-        setMongoFeedback({
-          message: data.error || 'Connection failed: Unable to connect to MongoDB cluster.',
-          isError: true
-        });
-      }
-    } catch (err: any) {
-      setMongoStatus('DISCONNECTED');
-      setMongoLatency(null);
-      setMongoCollections([]);
-      onMongoStatusChange?.(false, null);
-      setMongoFeedback({
-        message: `Network or backend error: ${err.message}`,
-        isError: true
-      });
-    } finally {
-      setMongoTesting(false);
-    }
-  };
 
   const fetchNvidiaModels = async (customEndpoint?: string, customKey?: string) => {
     setFetchingModels(true);
@@ -326,7 +228,6 @@ export default function SettingsView({ onMongoStatusChange }: SettingsViewProps 
     try {
       const payloadToSave = {
         ...settings,
-        mongodb_uri: mongoUri.trim()
       };
       const res = await fetch(`${apiUrl}/api/v1/companies/${companyId}/settings`, {
         method: "PUT",
@@ -336,9 +237,6 @@ export default function SettingsView({ onMongoStatusChange }: SettingsViewProps 
 
       if (res.ok) {
         setSaved(true);
-        if (mongoStatus === 'CONNECTED') {
-          onMongoStatusChange?.(true, mongoLatency);
-        }
         setTimeout(() => setSaved(false), 3000);
       } else {
         alert("Failed to save settings: " + (await res.text()));
@@ -930,104 +828,41 @@ export default function SettingsView({ onMongoStatusChange }: SettingsViewProps 
           </div>
         </div>
 
-        {/* Section: Cloud MongoDB Database Instance */}
+        {/* Section: PostgreSQL + pgvector Database */}
         <div className="bg-[#131722] border border-gray-800 rounded-2xl p-6 shadow-xl space-y-4">
           <div className="flex items-center justify-between pb-3 border-b border-gray-800">
             <div className="flex items-center gap-2">
               <Database size={18} className="text-emerald-400" />
               <div>
                 <h3 className="text-sm font-bold uppercase tracking-wider text-white">
-                  Cloud MongoDB Database (Default Instance)
+                  Database & Memory (PostgreSQL + pgvector)
                 </h3>
                 <p className="text-[11px] text-gray-400">
-                  Cloud MongoDB Atlas is active by default. No local MongoDB container needed in docker-compose.
+                  Unified relational store and vector memory for multi-agent organization state.
                 </p>
               </div>
             </div>
-            <span className={`text-[10px] font-mono px-2.5 py-1 rounded-md font-bold border ${
-              mongoStatus === 'CONNECTED' 
-                ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' 
-                : mongoStatus === 'NOT_CONFIGURED'
-                ? 'text-amber-400 bg-amber-500/10 border-amber-500/20'
-                : 'text-rose-400 bg-rose-500/10 border-rose-500/20'
-            }`}>
-              {mongoStatus === 'CONNECTED' ? 'CONNECTED' : mongoStatus === 'NOT_CONFIGURED' ? 'NOT CONFIGURED' : 'DISCONNECTED'}
+            <span className="text-[10px] font-mono px-2.5 py-1 rounded-md font-bold border text-emerald-400 bg-emerald-500/10 border-emerald-500/20">
+              ACTIVE
             </span>
           </div>
 
-          <div className="space-y-3 text-xs">
-            <div>
-              <label className="block font-medium text-gray-300 mb-1">
-                Cloud MongoDB Connection String (Atlas URI)
-              </label>
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <input
-                    type={showMongoUri ? "text" : "password"}
-                    placeholder="mongodb+srv://<username>:<password>@cluster.mongodb.net/companyos?retryWrites=true&w=majority"
-                    value={mongoUri}
-                    onChange={(e) => setMongoUri(e.target.value)}
-                    className="w-full bg-gray-900 border border-gray-700 rounded-xl pl-3.5 pr-10 py-2 text-xs text-white font-mono focus:outline-none focus:border-blue-500"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowMongoUri(!showMongoUri)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
-                  >
-                    {showMongoUri ? <EyeOff size={14} /> : <Eye size={14} />}
-                  </button>
-                </div>
-                <button
-                  type="button"
-                  onClick={testMongoConnection}
-                  disabled={mongoTesting}
-                  className="px-3.5 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 rounded-xl transition-colors flex items-center gap-1.5 active:scale-95 font-semibold"
-                >
-                  <RefreshCw size={13} className={mongoTesting ? 'animate-spin' : ''} />
-                  <span>{mongoTesting ? 'Testing...' : 'Test / Connect Cloud Mongo'}</span>
-                </button>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1 text-xs">
+            <div className="p-3 bg-gray-900/60 border border-gray-800 rounded-xl">
+              <div className="text-gray-500 text-[10px] uppercase font-semibold mb-0.5">Database Engine</div>
+              <div className="text-white font-mono font-medium">PostgreSQL 16 (pgvector)</div>
+            </div>
+            <div className="p-3 bg-gray-900/60 border border-gray-800 rounded-xl">
+              <div className="text-gray-500 text-[10px] uppercase font-semibold mb-0.5">Connection Port</div>
+              <div className="text-blue-400 font-mono text-[11px] font-medium">
+                localhost:5434 (docker-compose)
               </div>
             </div>
-
-            {mongoFeedback && (
-              <div className={`p-3 rounded-xl text-xs flex items-start gap-2 border ${
-                mongoFeedback.isError 
-                  ? 'bg-rose-950/40 border-rose-800/40 text-rose-300' 
-                  : 'bg-emerald-950/40 border-emerald-700/40 text-emerald-300'
-              }`}>
-                {mongoFeedback.isError ? (
-                  <AlertCircle size={15} className="text-rose-400 shrink-0 mt-0.5" />
-                ) : (
-                  <CheckCircle2 size={15} className="text-emerald-400 shrink-0 mt-0.5" />
-                )}
-                <span>{mongoFeedback.message}</span>
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
-              <div className="p-3 bg-gray-900/60 border border-gray-800 rounded-xl">
-                <div className="text-gray-500 text-[10px] uppercase font-semibold mb-0.5">Instance Type</div>
-                <div className="text-white font-mono font-medium">Cloud MongoDB Atlas</div>
-              </div>
-              <div className="p-3 bg-gray-900/60 border border-gray-800 rounded-xl">
-                <div className="text-gray-500 text-[10px] uppercase font-semibold mb-0.5">Collections</div>
-                <div className="text-blue-400 font-mono text-[11px] font-medium truncate">
-                  {mongoCollections.length > 0 ? mongoCollections.join(', ') : 'None (Cluster unconfigured or offline)'}
-                </div>
-              </div>
-              <div className="p-3 bg-gray-900/60 border border-gray-800 rounded-xl">
-                <div className="text-gray-500 text-[10px] uppercase font-semibold mb-0.5">Cloud Cluster Health</div>
-                {mongoStatus === 'CONNECTED' && mongoLatency !== null ? (
-                  <div className="flex items-center gap-1.5 text-emerald-400 font-mono font-medium">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                    <span>Active ({mongoLatency}ms)</span>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-1.5 text-amber-400 font-mono font-medium">
-                    <span className="w-2 h-2 rounded-full bg-amber-400" />
-                    <span>{mongoStatus === 'NOT_CONFIGURED' ? 'Unconfigured' : 'Offline'}</span>
-                  </div>
-                )}
+            <div className="p-3 bg-gray-900/60 border border-gray-800 rounded-xl">
+              <div className="text-gray-500 text-[10px] uppercase font-semibold mb-0.5">Persistence Mode</div>
+              <div className="flex items-center gap-1.5 text-emerald-400 font-mono font-medium">
+                <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                <span>Docker Volume / Schema Synced</span>
               </div>
             </div>
           </div>

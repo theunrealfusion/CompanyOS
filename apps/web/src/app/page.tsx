@@ -19,8 +19,6 @@ import AgentDrawer from "./components/AgentDrawer";
 import TaskModal from "./components/TaskModal";
 import OrgRestructureModal from "./components/OrgRestructureModal";
 import EventsFeed, { EventLog } from "./components/EventsFeed";
-import RequiredSetupModal from "./components/RequiredSetupModal";
-import RequiredSetupBanner from "./components/RequiredSetupBanner";
 import AgentsView from "./components/views/AgentsView";
 import WorkflowsView from "./components/views/WorkflowsView";
 import MetricsView from "./components/views/MetricsView";
@@ -86,37 +84,6 @@ export default function Home() {
   const [banner, setBanner] = useState<string | null>(null);
   const [companyId, setCompanyId] = useState<string>("ae5ecdc5-0a51-4589-98d6-fe7a4362d559");
 
-  // Required Setup State (MongoDB Atlas requirement)
-  const [setupModalOpen, setSetupModalOpen] = useState(false);
-  const [isMongoConnected, setIsMongoConnected] = useState(true); // default true while checking to prevent flash
-  const [mongoLatency, setMongoLatency] = useState<number | null>(null);
-  const [setupChecked, setSetupChecked] = useState(false);
-
-  // Check required setup status from backend
-  const checkSetupStatus = useCallback(async () => {
-    try {
-      const host = window.location.hostname || "localhost";
-      const res = await fetch(`http://${host}:8003/api/v1/system/setup-status`);
-      if (res.ok) {
-        const data = await res.json();
-        const connected = !!data.mongodb?.is_connected;
-        setIsMongoConnected(connected);
-        setMongoLatency(data.mongodb?.latency_ms ?? null);
-        if (!connected) {
-          // Required setup incomplete: Prompt user to complete setup first
-          setSetupModalOpen(true);
-        }
-      }
-    } catch (err) {
-      console.error("Failed to check system setup status", err);
-    } finally {
-      setSetupChecked(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    checkSetupStatus();
-  }, [checkSetupStatus]);
 
   // Load Saved Hierarchy and Company from DB on mount
   useEffect(() => {
@@ -405,11 +372,6 @@ export default function Home() {
 
   // Trigger Simulation via FastAPI backend
   const triggerSimulation = async () => {
-    if (!isMongoConnected) {
-      setBanner("Required setup incomplete: Cloud MongoDB Atlas must be connected before autonomous company operations can run.");
-      setSetupModalOpen(true);
-      return;
-    }
     if (isSimulating) return;
     setIsSimulating(true);
     setBanner("Autonomous Business Cycle initiated! Agents are executing real tasks live.");
@@ -467,12 +429,6 @@ export default function Home() {
 
   // Dispatch New Task from Modal
   const handleDispatchTask = async (agentId: string, taskDirective: string) => {
-    if (!isMongoConnected) {
-      setBanner("Required setup incomplete: Cloud MongoDB Atlas must be connected before dispatching tasks.");
-      setSetupModalOpen(true);
-      return;
-    }
-
     setBanner(`Dispatching directive to ${agentId.toUpperCase()}...`);
 
     // Optimistically update status to WORKING
@@ -709,27 +665,15 @@ export default function Home() {
               </button>
             )}
 
-            {/* MongoDB Atlas Status Pill */}
+            {/* PostgreSQL Database Indicator */}
             <button
-              onClick={() => {
-                if (!isMongoConnected) {
-                  setSetupModalOpen(true);
-                } else {
-                  setActiveTab("settings");
-                }
-              }}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-mono border transition-all active:scale-95 ${
-                isMongoConnected 
-                  ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-400 hover:bg-emerald-900/30' 
-                  : 'bg-amber-950/50 border-amber-500/40 text-amber-300 hover:bg-amber-900/40 shadow-sm shadow-amber-900/20 animate-pulse'
-              }`}
-              title={isMongoConnected ? `Cloud MongoDB Atlas Connected (${mongoLatency ?? '--'}ms) - click to view settings` : "Setup Required: Click to connect Cloud MongoDB Atlas"}
+              onClick={() => setActiveTab("settings")}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-mono border transition-all active:scale-95 bg-emerald-950/40 border-emerald-500/30 text-emerald-400 hover:bg-emerald-900/30"
+              title="PostgreSQL + pgvector Database Active"
             >
-              <Database size={13} className={isMongoConnected ? "text-emerald-400" : "text-amber-400"} />
-              <span className="hidden sm:inline font-semibold">
-                {isMongoConnected ? `Atlas ${mongoLatency ? `${mongoLatency}ms` : 'Active'}` : 'Setup Required'}
-              </span>
-              <span className={`w-2 h-2 rounded-full ${isMongoConnected ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+              <Database size={13} className="text-emerald-400" />
+              <span className="hidden sm:inline font-semibold">PostgreSQL</span>
+              <span className="w-2 h-2 rounded-full bg-emerald-400" />
             </button>
 
             {/* Quick Dispatch Task */}
@@ -769,13 +713,6 @@ export default function Home() {
             </button>
           </div>
         </header>
-
-        {/* Required Setup Incomplete Banner */}
-        <RequiredSetupBanner 
-          isMongoConnected={isMongoConnected}
-          onOpenSetupModal={() => setSetupModalOpen(true)}
-          onGoToSettings={() => setActiveTab("settings")}
-        />
 
         {/* Notification / Simulation Banner */}
         {banner && (
@@ -845,12 +782,7 @@ export default function Home() {
           )}
 
           {activeTab === "settings" && (
-            <SettingsView 
-              onMongoStatusChange={(connected, latency) => {
-                setIsMongoConnected(connected);
-                setMongoLatency(latency);
-              }}
-            />
+            <SettingsView />
           )}
         </div>
 
@@ -892,21 +824,7 @@ export default function Home() {
           events={events}
         />
 
-        {/* Required Setup Modal (Cloud MongoDB Atlas Onboarding Gate) */}
-        <RequiredSetupModal
-          isOpen={setupModalOpen}
-          onClose={() => setSetupModalOpen(false)}
-          onSetupComplete={(mongoData) => {
-            setIsMongoConnected(true);
-            setMongoLatency(mongoData?.latency_ms ?? null);
-            setBanner(`Cloud MongoDB Atlas successfully connected (${mongoData?.latency_ms ?? ''}ms)! All company workflows unlocked.`);
-            setTimeout(() => setBanner(null), 5000);
-          }}
-          onGoToSettings={() => {
-            setSetupModalOpen(false);
-            setActiveTab("settings");
-          }}
-        />
+
       </main>
     </div>
   );
