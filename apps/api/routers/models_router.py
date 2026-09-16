@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import Any
+from typing import Optional, Any
 
 import httpx
 from fastapi import APIRouter, Body, Depends, HTTPException
@@ -19,7 +19,7 @@ DEFAULT_NVIDIA_ENDPOINT = "https://integrate.api.nvidia.com/v1"
 
 @router.get("/nvidia")
 async def get_nvidia_models(
-    endpoint: str | None = None, api_key: str | None = None, db: AsyncSession = Depends(get_db)
+    endpoint: Optional[str] = None, api_key: Optional[str] = None, db: AsyncSession = Depends(get_db)
 ):
     """
     Fetch all available models from NVIDIA NIM endpoint (build.nvidia.com).

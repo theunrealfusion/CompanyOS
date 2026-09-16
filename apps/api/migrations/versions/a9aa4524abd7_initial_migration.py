@@ -1,3 +1,4 @@
+from typing import Optional, Union
 """Initial migration
 
 Revision ID: a9aa4524abd7
@@ -13,9 +14,9 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "a9aa4524abd7"
-down_revision: str | Sequence[str] | None = None
-branch_labels: str | Sequence[str] | None = None
-depends_on: str | Sequence[str] | None = None
+down_revision: Union[str, Sequence[str]] = None
+branch_labels: Union[str, Sequence[str]] = None
+depends_on: Union[str, Sequence[str]] = None
 
 
 def upgrade() -> None:

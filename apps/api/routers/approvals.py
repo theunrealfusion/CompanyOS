@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Optional, Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,7 +15,7 @@ router = APIRouter(prefix="/approvals", tags=["approvals"])
 
 
 @router.get("/")
-async def get_approvals(company_id: str | None = None, db: AsyncSession = Depends(get_db)):
+async def get_approvals(company_id: Optional[str] = None, db: AsyncSession = Depends(get_db)):
     query = select(Approval).order_by(Approval.created_at.desc())
     if company_id:
         try:
