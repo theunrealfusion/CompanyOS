@@ -1,7 +1,7 @@
-from typing import Optional
 import asyncio
 import os
 from logging.config import fileConfig
+from typing import Optional
 
 from alembic import context
 from sqlalchemy import pool

@@ -1,7 +1,7 @@
 import logging
-from apps.api.models.agent import Task
-from apps.api.services.task_service import TaskService
+
 from apps.api.database.session import async_session
+from apps.api.services.task_service import TaskService
 
 logger = logging.getLogger(__name__)
 
@@ -13,9 +13,10 @@ class TelegramAdapter:
         # Stub: parse message and create a task for the CEO
         async with async_session() as db:
             task_service = TaskService(db)
-            from apps.api.schemas.tasks import TaskCreate
             # We would look up CEO id, hardcoding for stub
             import uuid
+
+            from apps.api.schemas.tasks import TaskCreate
             task = await task_service.create_task(TaskCreate(
                 title=f"Telegram Request from {user_id}",
                 description=message_text,

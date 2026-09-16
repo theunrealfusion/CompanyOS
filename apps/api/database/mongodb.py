@@ -1,7 +1,7 @@
 import logging
 import os
 import time
-from typing import Optional, Any
+from typing import Any
 
 from motor.motor_asyncio import AsyncIOMotorClient
 
@@ -19,8 +19,8 @@ class MongoDBManager:
         self.client: AsyncIOMotorClient | None = None
         self.db = None
         self.is_connected = False
-        self.last_error: Optional[str] = None
-        self.last_latency_ms: Optional[float] = None
+        self.last_error: str | None = None
+        self.last_latency_ms: float | None = None
 
         # Real in-memory transactional store used when MongoDB is not yet configured or reachable
         self.local_store: dict[str, Any] = {
@@ -48,7 +48,7 @@ class MongoDBManager:
                 return "mongodb+srv://****:****@cluster..."
         return uri
 
-    async def connect(self, custom_uri: Optional[str] = None) -> tuple[bool, str]:
+    async def connect(self, custom_uri: str | None = None) -> tuple[bool, str]:
         target_uri = custom_uri if custom_uri is not None else self.uri
         if not target_uri or target_uri.strip() == "":
             self.is_connected = False

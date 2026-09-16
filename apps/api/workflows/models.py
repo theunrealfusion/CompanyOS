@@ -1,5 +1,6 @@
-from typing import Optional, List, Dict, Any
 from dataclasses import dataclass
+from typing import Any
+
 
 @dataclass
 class AgentWorkflowInput:
@@ -11,12 +12,12 @@ class AgentWorkflowInput:
 @dataclass
 class LLMStepResult:
     step_id: str
-    content: Optional[str]
-    tool_calls: List[Dict[str, Any]]
+    content: str | None
+    tool_calls: list[dict[str, Any]]
     is_final: bool
 
 @dataclass
 class ToolExecutionResult:
     tool_call_id: str
-    result_data: Dict[str, Any]
-    error: Optional[str] = None
+    result_data: dict[str, Any]
+    error: str | None = None

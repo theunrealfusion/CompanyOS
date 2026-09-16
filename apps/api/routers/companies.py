@@ -1,8 +1,7 @@
-import asyncio
 import logging
 import os
 import uuid
-from typing import Optional, Any, List
+from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,8 +10,7 @@ from sqlalchemy.future import select
 from apps.api.database.session import get_db
 from apps.api.models.organization import Company
 from apps.api.routers.ws import publish_event
-from apps.api.runtime.engine import execute_task, run_autonomous_business_cycle
-from apps.api.schemas.companies import CompanyCreate, CompanyUpdate, CompanyResponse
+from apps.api.schemas.companies import CompanyCreate, CompanyResponse, CompanyUpdate
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +42,7 @@ DEFAULT_SETTINGS = {
 }
 
 
-@router.get("/", response_model=List[CompanyResponse])
+@router.get("/", response_model=list[CompanyResponse])
 async def get_companies(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Company))
     return result.scalars().all()
@@ -55,9 +53,9 @@ async def create_company(payload: CompanyCreate, db: AsyncSession = Depends(get_
     settings = dict(DEFAULT_SETTINGS)
     settings.update(payload.settings)
     company = Company(
-        name=payload.name, 
-        mission=payload.mission, 
-        settings=settings, 
+        name=payload.name,
+        mission=payload.mission,
+        settings=settings,
         org_hierarchy=payload.org_hierarchy
     )
     db.add(company)
@@ -180,7 +178,7 @@ async def update_company(company_id: str, payload: CompanyUpdate, db: AsyncSessi
 
     await db.commit()
     await db.refresh(company)
-    
+
     return company
 
 
@@ -201,17 +199,17 @@ async def simulate_company(company_id: str, db: AsyncSession = Depends(get_db)):
 async def dispatch_company_task(
     company_id: str, payload: dict[str, Any] = Body(...), db: AsyncSession = Depends(get_db)
 ):
-    from apps.api.services.task_service import TaskService
-    from apps.api.schemas.tasks import TaskCreate
     from apps.api.models.agent import Agent
-    
+    from apps.api.schemas.tasks import TaskCreate
+    from apps.api.services.task_service import TaskService
+
     agent_role = payload.get("agent", "ceo").upper()
     task_title = payload.get("task", "Analyze company performance")
-    
+
     # Try to find the agent by role
     agent = await db.scalar(select(Agent).where(Agent.company_id == uuid.UUID(company_id), Agent.role == agent_role))
     agent_uuid = agent.id if agent else uuid.UUID("00000000-0000-0000-0000-000000000000")
-    
+
     task_svc = TaskService(db)
     task = await task_svc.create_task(TaskCreate(
         title=task_title,
@@ -219,6 +217,6 @@ async def dispatch_company_task(
         company_id=uuid.UUID(company_id),
         assignee_id=agent_uuid
     ))
-    
+
     run_id = await task_svc.dispatch_task(task.id)
     return {"status": "dispatched", "task_id": str(task.id), "run_id": run_id}

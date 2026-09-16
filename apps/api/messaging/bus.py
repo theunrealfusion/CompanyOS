@@ -1,6 +1,7 @@
 import json
 import logging
-from typing import Callable, Awaitable
+from collections.abc import Awaitable, Callable
+
 import redis.asyncio as redis
 
 logger = logging.getLogger(__name__)

@@ -1,6 +1,8 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+
 from apps.api.models.memory import MemoryEmbedding
+
 
 class MemoryService:
     def __init__(self, db: AsyncSession):

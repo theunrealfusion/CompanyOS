@@ -1,11 +1,10 @@
-import json
-from typing import Dict, Any, Callable, Awaitable
-from apps.api.tools.definitions import get_core_tools
-from apps.api.services.task_service import TaskService
-from apps.api.services.approval_service import ApprovalService
+import uuid
+
 from apps.api.database.session import async_session
 from apps.api.schemas.tasks import TaskCreate
-import uuid
+from apps.api.services.approval_service import ApprovalService
+from apps.api.services.task_service import TaskService
+
 
 class ToolExecutor:
     async def delegate_task(self, assignee_role: str, task_title: str, task_description: str, company_id: str) -> dict:

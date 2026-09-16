@@ -1,5 +1,4 @@
 import uuid
-from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,7 +11,7 @@ from apps.api.schemas.runs import AgentRunResponse
 router = APIRouter(prefix="/runs", tags=["runs"])
 
 
-@router.get("/", response_model=List[AgentRunResponse])
+@router.get("/", response_model=list[AgentRunResponse])
 async def get_runs(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(AgentRun))
     return result.scalars().all()

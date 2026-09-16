@@ -1,6 +1,7 @@
-from typing import Dict, Any
+from typing import Any
 
-def get_core_tools() -> list[Dict[str, Any]]:
+
+def get_core_tools() -> list[dict[str, Any]]:
     return [
         {
             "name": "delegate_task",

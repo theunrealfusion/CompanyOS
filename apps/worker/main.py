@@ -1,15 +1,17 @@
 import asyncio
 import logging
+
 from temporalio.client import Client
 from temporalio.worker import Worker
 
-from apps.api.workflows.agent_workflow import AgentWorkflow
 from apps.api.workflows.activities import (
-    prepare_agent_run,
+    complete_agent_run,
     execute_llm_step,
     execute_tools,
-    complete_agent_run
+    prepare_agent_run,
 )
+from apps.api.workflows.agent_workflow import AgentWorkflow
+
 
 async def main():
     logging.basicConfig(level=logging.INFO)
@@ -25,7 +27,7 @@ async def main():
             workflows=[AgentWorkflow],
             activities=[prepare_agent_run, execute_llm_step, execute_tools, complete_agent_run],
         )
-        
+
         logging.info("Temporal Worker listening on 'companyos-tasks' queue...")
         await worker.run()
     except Exception as e:

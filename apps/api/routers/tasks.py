@@ -1,5 +1,5 @@
 from uuid import UUID
-from typing import List, Optional
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -15,16 +15,16 @@ router = APIRouter(prefix="/tasks", tags=["tasks"])
 async def create_and_dispatch_task(payload: TaskCreate, db: AsyncSession = Depends(get_db)):
     service = TaskService(db)
     task = await service.create_task(payload)
-    
+
     try:
-        run_id = await service.dispatch_task(task.id)
+        await service.dispatch_task(task.id)
     except Exception as e:
         import logging
         logging.error(f"Failed to dispatch to Temporal: {e}")
-        
+
     return task
 
-@router.get("/", response_model=List[TaskResponse])
+@router.get("/", response_model=list[TaskResponse])
 async def list_tasks(company_id: UUID, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Task).where(Task.company_id == company_id))
     return result.scalars().all()

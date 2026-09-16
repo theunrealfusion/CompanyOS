@@ -1,5 +1,4 @@
 import uuid
-from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,12 +6,12 @@ from sqlalchemy.future import select
 
 from apps.api.database.session import get_db
 from apps.api.models.goal import Goal
-from apps.api.schemas.goals import GoalCreate, GoalUpdate, GoalResponse
+from apps.api.schemas.goals import GoalCreate, GoalResponse, GoalUpdate
 
 router = APIRouter(prefix="/goals", tags=["goals"])
 
 
-@router.get("/", response_model=List[GoalResponse])
+@router.get("/", response_model=list[GoalResponse])
 async def get_goals(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Goal))
     return result.scalars().all()

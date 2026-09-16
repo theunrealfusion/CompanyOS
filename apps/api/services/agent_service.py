@@ -1,11 +1,11 @@
-from typing import Optional
 from uuid import UUID
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy.orm import selectinload
 
 from apps.api.models.agent import Agent, AgentVersion
-from apps.api.schemas.agents import AgentCreate, AgentUpdate, AgentVersionCreate
+from apps.api.schemas.agents import AgentCreate
+
 
 class AgentService:
     def __init__(self, db: AsyncSession):
@@ -16,7 +16,7 @@ class AgentService:
         self.db.add(agent)
         await self.db.commit()
         await self.db.refresh(agent)
-        
+
         # Create initial version
         version = AgentVersion(
             agent_id=agent.id,
@@ -33,7 +33,7 @@ class AgentService:
         await self.db.commit()
         return agent
 
-    async def get_agent(self, agent_id: UUID) -> Optional[Agent]:
+    async def get_agent(self, agent_id: UUID) -> Agent | None:
         result = await self.db.execute(select(Agent).where(Agent.id == agent_id))
         return result.scalars().first()
 

@@ -1,6 +1,6 @@
-from typing import Optional, List, Dict, Any
 import logging
-from openai import AsyncOpenAI
+from typing import Any
+
 from .base import BaseProvider, ProviderResult
 from .openai_compatible import OpenAIProvider
 
@@ -14,7 +14,7 @@ class GeminiProvider(BaseProvider):
             base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
         )
 
-    async def call(self, messages: list[dict], model: str, tools: Optional[List[Dict[str, Any]]] = None) -> ProviderResult:
+    async def call(self, messages: list[dict], model: str, tools: list[dict[str, Any]] | None = None) -> ProviderResult:
         # Map model name
         model_name = "gemini-1.5-pro" if "pro" in model else "gemini-1.5-flash"
         return await self.provider.call(messages, model_name, tools)

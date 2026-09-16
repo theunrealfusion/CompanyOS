@@ -1,31 +1,33 @@
-from typing import Optional, Any, Dict, Optional
-from uuid import UUID
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict, Field
+from typing import Any
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict
+
 
 class GoalBase(BaseModel):
     title: str
-    description: Optional[str] = None
+    description: str | None = None
     goal_type: str
-    target: Optional[str] = None
-    parent_goal_id: Optional[UUID] = None
-    owner_agent_id: Optional[UUID] = None
-    deadline: Optional[datetime] = None
+    target: str | None = None
+    parent_goal_id: UUID | None = None
+    owner_agent_id: UUID | None = None
+    deadline: datetime | None = None
 
 class GoalCreate(GoalBase):
     company_id: UUID
 
 class GoalUpdate(BaseModel):
-    title: Optional[str] = None
-    description: Optional[str] = None
-    status: Optional[str] = None
-    target: Optional[str] = None
-    progress: Optional[float] = None
-    confidence: Optional[float] = None
-    metrics: Optional[Dict[str, Any]] = None
-    deadline: Optional[datetime] = None
-    owner_agent_id: Optional[UUID] = None
-    parent_goal_id: Optional[UUID] = None
+    title: str | None = None
+    description: str | None = None
+    status: str | None = None
+    target: str | None = None
+    progress: float | None = None
+    confidence: float | None = None
+    metrics: dict[str, Any] | None = None
+    deadline: datetime | None = None
+    owner_agent_id: UUID | None = None
+    parent_goal_id: UUID | None = None
 
 class GoalResponse(GoalBase):
     id: UUID
@@ -33,7 +35,7 @@ class GoalResponse(GoalBase):
     status: str
     progress: float
     confidence: float
-    metrics: Dict[str, Any]
+    metrics: dict[str, Any]
     created_at: datetime
-    updated_at: Optional[datetime] = None
+    updated_at: datetime | None = None
     model_config = ConfigDict(from_attributes=True)

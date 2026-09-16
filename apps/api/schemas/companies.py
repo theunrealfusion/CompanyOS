@@ -1,22 +1,24 @@
-from typing import Optional, Any, Dict, List, Optional
-from uuid import UUID
 from datetime import datetime
+from typing import Any
+from uuid import UUID
+
 from pydantic import BaseModel, ConfigDict, Field
+
 
 class CompanyBase(BaseModel):
     name: str
-    mission: Optional[str] = None
-    settings: Dict[str, Any] = Field(default_factory=dict)
-    org_hierarchy: Dict[str, Any] = Field(default_factory=dict)
+    mission: str | None = None
+    settings: dict[str, Any] = Field(default_factory=dict)
+    org_hierarchy: dict[str, Any] = Field(default_factory=dict)
 
 class CompanyCreate(CompanyBase):
     pass
 
 class CompanyUpdate(BaseModel):
-    name: Optional[str] = None
-    mission: Optional[str] = None
-    settings: Optional[Dict[str, Any]] = None
-    org_hierarchy: Optional[Dict[str, Any]] = None
+    name: str | None = None
+    mission: str | None = None
+    settings: dict[str, Any] | None = None
+    org_hierarchy: dict[str, Any] | None = None
 
 class CompanyResponse(CompanyBase):
     id: UUID
@@ -26,18 +28,18 @@ class CompanyResponse(CompanyBase):
 
 class DepartmentBase(BaseModel):
     name: str
-    mission: Optional[str] = None
-    parent_department_id: Optional[UUID] = None
-    head_agent_id: Optional[UUID] = None
+    mission: str | None = None
+    parent_department_id: UUID | None = None
+    head_agent_id: UUID | None = None
 
 class DepartmentCreate(DepartmentBase):
     company_id: UUID
 
 class DepartmentUpdate(BaseModel):
-    name: Optional[str] = None
-    mission: Optional[str] = None
-    parent_department_id: Optional[UUID] = None
-    head_agent_id: Optional[UUID] = None
+    name: str | None = None
+    mission: str | None = None
+    parent_department_id: UUID | None = None
+    head_agent_id: UUID | None = None
 
 class DepartmentResponse(DepartmentBase):
     id: UUID

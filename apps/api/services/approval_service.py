@@ -1,9 +1,11 @@
-import uuid
 import logging
+import uuid
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from apps.api.models.event import Approval
+
 from apps.api.messaging.bus import event_bus
+from apps.api.models.event import Approval
 from apps.api.services.temporal_client import TemporalService
 
 logger = logging.getLogger(__name__)
@@ -17,7 +19,7 @@ class ApprovalService:
         self.db.add(app)
         await self.db.commit()
         await self.db.refresh(app)
-        
+
         await event_bus.publish("ApprovalRequested", {
             "id": str(app.id),
             "title": app.title,
@@ -35,7 +37,7 @@ class ApprovalService:
                 "id": str(app.id),
                 "status": status
             })
-            
+
             if run_id:
                 try:
                     client = await TemporalService.get_client()
@@ -43,5 +45,5 @@ class ApprovalService:
                     await handle.signal("approval_response", status)
                 except Exception as e:
                     logger.error(f"Failed to signal workflow {run_id}: {e}")
-                    
+
         return app

@@ -1,9 +1,12 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, DateTime, ForeignKey, JSON
-from sqlalchemy.dialects.postgresql import UUID
+
 from pgvector.sqlalchemy import Vector
+from sqlalchemy import JSON, Column, DateTime, ForeignKey, String
+from sqlalchemy.dialects.postgresql import UUID
+
 from apps.api.database.session import Base
+
 
 class MemoryEmbedding(Base):
     __tablename__ = "memory_embeddings"

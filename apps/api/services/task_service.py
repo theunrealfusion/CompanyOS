@@ -1,5 +1,5 @@
 import uuid
-from typing import Optional
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -7,6 +7,7 @@ from apps.api.models.agent import Task
 from apps.api.schemas.tasks import TaskCreate
 from apps.api.services.temporal_client import TemporalService
 from apps.api.workflows.models import AgentWorkflowInput
+
 
 class TaskService:
     def __init__(self, db: AsyncSession):
@@ -25,7 +26,7 @@ class TaskService:
             raise ValueError("Task not found")
 
         run_id = str(uuid.uuid4())
-        
+
         input_data = AgentWorkflowInput(
             run_id=run_id,
             agent_id=str(task.assignee_id),
@@ -34,11 +35,11 @@ class TaskService:
         )
 
         client = await TemporalService.get_client()
-        handle = await client.start_workflow(
+        await client.start_workflow(
             "AgentWorkflow",
             input_data,
             id=f"agent-run-{run_id}",
             task_queue="companyos-tasks"
         )
-        
+
         return run_id

@@ -1,5 +1,4 @@
 import uuid
-from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,12 +6,16 @@ from sqlalchemy.future import select
 
 from apps.api.database.session import get_db
 from apps.api.models.model_provider import ModelProvider
-from apps.api.schemas.providers import ModelProviderCreate, ModelProviderUpdate, ModelProviderResponse
+from apps.api.schemas.providers import (
+    ModelProviderCreate,
+    ModelProviderResponse,
+    ModelProviderUpdate,
+)
 
 router = APIRouter(prefix="/providers", tags=["providers"])
 
 
-@router.get("/", response_model=List[ModelProviderResponse])
+@router.get("/", response_model=list[ModelProviderResponse])
 async def get_providers(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(ModelProvider))
     return result.scalars().all()

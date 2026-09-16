@@ -1,7 +1,9 @@
-from typing import Optional, List, Dict, Any
-import logging
 import json
+import logging
+from typing import Any
+
 from openai import AsyncOpenAI
+
 from .base import BaseProvider, ProviderResult
 
 logger = logging.getLogger(__name__)
@@ -12,7 +14,7 @@ class OpenAIProvider(BaseProvider):
         self.base_url = base_url
         self.client = AsyncOpenAI(api_key=api_key, base_url=base_url)
 
-    async def call(self, messages: list[dict], model: str, tools: Optional[List[Dict[str, Any]]] = None) -> ProviderResult:
+    async def call(self, messages: list[dict], model: str, tools: list[dict[str, Any]] | None = None) -> ProviderResult:
         try:
             kwargs = {
                 "model": model,
@@ -23,25 +25,25 @@ class OpenAIProvider(BaseProvider):
             if tools:
                 kwargs["tools"] = [{"type": "function", "function": t} for t in tools]
                 kwargs["tool_choice"] = "auto"
-                
+
             response = await self.client.chat.completions.create(**kwargs)
             choice = response.choices[0]
             message = choice.message
-            
+
             tool_calls = []
             if message.tool_calls:
                 for tc in message.tool_calls:
                     if tc.type == 'function':
                         try:
                             args = json.loads(tc.function.arguments)
-                        except:
+                        except Exception:
                             args = {}
                         tool_calls.append({
                             "id": tc.id,
                             "name": tc.function.name,
                             "args": args
                         })
-                        
+
             return ProviderResult(
                 content=message.content,
                 tool_calls=tool_calls,

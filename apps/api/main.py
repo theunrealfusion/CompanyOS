@@ -1,8 +1,8 @@
 import asyncio
-from apps.api.adapters.telegram_poller import run_telegram_poller
-from typing import Optional
 import sys
 from pathlib import Path
+
+from apps.api.adapters.telegram_poller import run_telegram_poller
 
 # Add project root to sys.path so 'apps.api...' imports resolve cleanly
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -10,8 +10,8 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 app = FastAPI(
     title="CompanyOS API",
@@ -20,6 +20,7 @@ app = FastAPI(
 )
 
 from apps.api.middleware import APIKeyAuthMiddleware
+
 app.add_middleware(APIKeyAuthMiddleware)
 app.add_middleware(
     CORSMiddleware,
@@ -29,7 +30,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from apps.api.routers.tasks import router as tasks_router
 from apps.api.routers import (
     agents,
     approvals,

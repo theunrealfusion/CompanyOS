@@ -1,8 +1,9 @@
-from typing import Optional
+
 from temporalio.client import Client
 
+
 class TemporalService:
-    _client: Optional[Client] = None
+    _client: Client | None = None
 
     @classmethod
     async def get_client(cls) -> Client:

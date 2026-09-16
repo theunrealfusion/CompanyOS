@@ -1,5 +1,4 @@
 import uuid
-from typing import Optional, Any, List
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,12 +8,12 @@ from apps.api.database.session import get_db
 from apps.api.models.agent import Agent
 from apps.api.models.organization import Company
 from apps.api.routers.ws import publish_event
-from apps.api.schemas.agents import AgentCreate, AgentUpdate, AgentResponse
+from apps.api.schemas.agents import AgentCreate, AgentResponse, AgentUpdate
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 
 
-@router.get("/", response_model=List[AgentResponse])
+@router.get("/", response_model=list[AgentResponse])
 async def get_agents(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Agent))
     return result.scalars().all()
@@ -131,7 +130,7 @@ async def set_agent_status(
         agent = result.scalar_one_or_none()
         if not agent:
             raise HTTPException(status_code=404, detail="Agent not found")
-        
+
         if hasattr(agent, 'status'):
             agent.status = status
             await db.commit()

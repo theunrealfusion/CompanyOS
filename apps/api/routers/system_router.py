@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import Optional, Any
+from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession

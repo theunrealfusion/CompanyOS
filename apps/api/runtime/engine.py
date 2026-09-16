@@ -1,9 +1,9 @@
 import logging
 import os
 import uuid
-from datetime import datetime
-from typing import Optional, Any
 from abc import ABC, abstractmethod
+from datetime import datetime
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -13,8 +13,8 @@ from apps.api.database.session import async_session
 from apps.api.models.agent import Agent, Task
 from apps.api.models.event import Approval, Event
 from apps.api.models.organization import Company
+from apps.api.providers import GeminiProvider, OpenAIProvider
 from apps.api.routers.ws import publish_event
-from apps.api.providers import OpenAIProvider, GeminiProvider
 
 logger = logging.getLogger("companyos.runtime")
 
@@ -29,12 +29,12 @@ class NativeRuntime(AgentRuntime):
 
     async def execute(self, agent: Agent, task_title: str, context: dict) -> str:
         system_instruction = f"You are the {agent.role} of CompanyOS. Perform this task with high precision and executive clarity."
-        
+
         messages = [
             {"role": "system", "content": system_instruction},
             {"role": "user", "content": task_title}
         ]
-        
+
         model = context.get("model", "gemini-1.5-pro")
         return await self.provider.call(messages, model)
 
@@ -104,7 +104,7 @@ async def execute_task(
     provider = None
     if nvidia_key or ("integrate.api.nvidia.com" in nim_endpoint and nvidia_key):
         provider = OpenAIProvider(api_key=nvidia_key, base_url=nim_endpoint.rstrip("/"))
-        if not "/" in default_model:
+        if "/" not in default_model:
             default_model = "nvidia/nemotron-3-ultra-550b-a55b"
     elif gemini_key:
         provider = GeminiProvider(api_key=gemini_key)

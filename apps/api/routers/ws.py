@@ -1,14 +1,14 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from typing import List
 import json
-import asyncio
+
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+
 from apps.api.messaging.bus import event_bus
 
 router = APIRouter(prefix="/ws", tags=["websocket"])
 
 class ConnectionManager:
     def __init__(self):
-        self.active_connections: List[WebSocket] = []
+        self.active_connections: list[WebSocket] = []
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
@@ -23,7 +23,7 @@ class ConnectionManager:
         for connection in self.active_connections:
             try:
                 await connection.send_text(txt)
-            except:
+            except Exception:
                 pass
 
 manager = ConnectionManager()
@@ -48,5 +48,5 @@ async def publish_event(event_type: str, payload: dict):
     await manager.broadcast({"type": event_type, "payload": payload})
     try:
         await event_bus.publish(event_type, payload)
-    except:
+    except Exception:
         pass

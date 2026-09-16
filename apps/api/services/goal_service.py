@@ -1,10 +1,11 @@
-from typing import Optional
 from uuid import UUID
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from apps.api.models.goal import Goal
-from apps.api.schemas.goals import GoalCreate, GoalUpdate
+from apps.api.schemas.goals import GoalCreate
+
 
 class GoalService:
     def __init__(self, db: AsyncSession):
@@ -16,7 +17,7 @@ class GoalService:
         await self.db.commit()
         await self.db.refresh(goal)
         return goal
-        
-    async def get_goal(self, goal_id: UUID) -> Optional[Goal]:
+
+    async def get_goal(self, goal_id: UUID) -> Goal | None:
         result = await self.db.execute(select(Goal).where(Goal.id == goal_id))
         return result.scalars().first()

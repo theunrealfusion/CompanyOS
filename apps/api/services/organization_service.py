@@ -1,10 +1,11 @@
-from typing import Optional
 from uuid import UUID
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from apps.api.models.organization import Company, Department
+from apps.api.models.organization import Company
 from apps.api.schemas.companies import CompanyCreate
+
 
 class OrganizationService:
     def __init__(self, db: AsyncSession):
@@ -17,6 +18,6 @@ class OrganizationService:
         await self.db.refresh(comp)
         return comp
 
-    async def get_company(self, company_id: UUID) -> Optional[Company]:
+    async def get_company(self, company_id: UUID) -> Company | None:
         result = await self.db.execute(select(Company).where(Company.id == company_id))
         return result.scalars().first()
