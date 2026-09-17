@@ -1,3 +1,5 @@
+from typing import Optional, Union
+
 """add_missing_model_columns
 
 Revision ID: 4cd8c3d374d8
@@ -13,9 +15,9 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "4cd8c3d374d8"
-down_revision: str | Sequence[str] | None = "a9aa4524abd7"
-branch_labels: str | Sequence[str] | None = None
-depends_on: str | Sequence[str] | None = None
+down_revision: str | Sequence[str] = "a9aa4524abd7"
+branch_labels: str | Sequence[str] = None
+depends_on: str | Sequence[str] = None
 
 
 def upgrade() -> None:

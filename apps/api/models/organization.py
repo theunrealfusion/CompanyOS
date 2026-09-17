@@ -28,12 +28,15 @@ class Department(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
+    parent_department_id = Column(UUID(as_uuid=True), ForeignKey("departments.id"), nullable=True)
+    head_agent_id = Column(UUID(as_uuid=True), ForeignKey("agents.id"), nullable=True)
+
     name = Column(String, index=True, nullable=False)
     mission = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     company = relationship("Company", back_populates="departments")
-    agents = relationship("Agent", back_populates="department")
+    agents = relationship("Agent", back_populates="department", foreign_keys="[Agent.department_id]")
 
 
 class User(Base):

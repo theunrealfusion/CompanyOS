@@ -1,11 +1,10 @@
 import logging
 import os
 import uuid
+from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Any
 
-import httpx
-from openai import AsyncOpenAI
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -14,154 +13,30 @@ from apps.api.database.session import async_session
 from apps.api.models.agent import Agent, Task
 from apps.api.models.event import Approval, Event
 from apps.api.models.organization import Company
+from apps.api.providers import GeminiProvider, OpenAIProvider
 from apps.api.routers.ws import publish_event
 
 logger = logging.getLogger("companyos.runtime")
 
+class AgentRuntime(ABC):
+    @abstractmethod
+    async def execute(self, agent: Agent, task_title: str, context: dict) -> str:
+        pass
 
-async def call_model_provider(
-    settings: dict[str, Any], prompt: str, system_instruction: str = ""
-) -> str:
-    """
-    Calls the configured LLM provider (NVIDIA NIM, Gemini, OpenAI, Anthropic, Ollama)
-    If no API key or provider is reachable, returns an honest deterministic reasoning summary.
-    """
-    nvidia_key = settings.get("nvidia_api_key", "").strip() or os.getenv("NVIDIA_API_KEY", "")
-    nim_endpoint = (
-        settings.get("nvidia_nim_endpoint", "").strip() or "https://integrate.api.nvidia.com/v1"
-    )
-    gemini_key = settings.get("gemini_api_key", "").strip()
-    openai_key = settings.get("openai_api_key", "").strip()
-    ollama_endpoint = settings.get("ollama_vllm_url", "").strip()
-    default_model = settings.get("default_model", "gemini-1.5-pro")
+class NativeRuntime(AgentRuntime):
+    def __init__(self, provider):
+        self.provider = provider
 
-    # 1. NVIDIA NIM (build.nvidia.com / custom NIM)
-    if nvidia_key or ("integrate.api.nvidia.com" in nim_endpoint and nvidia_key):
-        try:
-            client = AsyncOpenAI(base_url=nim_endpoint.rstrip("/"), api_key=nvidia_key)
-            messages = []
-            if system_instruction:
-                messages.append({"role": "system", "content": system_instruction})
-            messages.append({"role": "user", "content": prompt})
+    async def execute(self, agent: Agent, task_title: str, context: dict) -> str:
+        system_instruction = f"You are the {agent.role} of CompanyOS. Perform this task with high precision and executive clarity."
 
-            # Check for reasoning / thinking support
-            is_reasoning = any(
-                x in default_model.lower() for x in ["ultra", "nemotron", "deepseek-r1", "reason"]
-            )
-            extra_body = (
-                {"chat_template_kwargs": {"enable_thinking": True}} if is_reasoning else None
-            )
+        messages = [
+            {"role": "system", "content": system_instruction},
+            {"role": "user", "content": task_title}
+        ]
 
-            # Fallback to flagship nemotron model if default_model is not an nvidia format
-            model_to_use = (
-                default_model if "/" in default_model else "nvidia/nemotron-3-ultra-550b-a55b"
-            )
-
-            stream = await client.chat.completions.create(
-                model=model_to_use,
-                messages=messages,
-                temperature=float(settings.get("temperature", 0.7)),
-                max_tokens=int(settings.get("max_tokens", 4096)),
-                extra_body=extra_body,
-                stream=True,
-            )
-
-            reasoning_parts = []
-            content_parts = []
-            async for chunk in stream:
-                if not chunk.choices:
-                    continue
-                delta = chunk.choices[0].delta
-                r = getattr(delta, "reasoning_content", None)
-                if r:
-                    reasoning_parts.append(r)
-                if delta.content is not None:
-                    content_parts.append(delta.content)
-
-            res_content = "".join(content_parts).strip()
-            res_reasoning = "".join(reasoning_parts).strip()
-            if res_reasoning and res_content:
-                return f"[Reasoning]:\n{res_reasoning}\n\n[Execution Output]:\n{res_content}"
-            elif res_content:
-                return res_content
-            elif res_reasoning:
-                return res_reasoning
-        except Exception as e:
-            logger.error(f"Error calling NVIDIA NIM: {e}")
-
-    async with httpx.AsyncClient(timeout=30.0) as http_client:
-        # 2. Google Gemini
-        if gemini_key:
-            try:
-                model_name = "gemini-1.5-pro" if "pro" in default_model else "gemini-1.5-flash"
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={gemini_key}"
-                full_prompt = (
-                    f"{system_instruction}\n\nObjective: {prompt}" if system_instruction else prompt
-                )
-                payload = {
-                    "contents": [{"parts": [{"text": full_prompt}]}],
-                    "generationConfig": {
-                        "temperature": float(settings.get("temperature", 0.2)),
-                        "maxOutputTokens": int(settings.get("max_tokens", 2048)),
-                    },
-                }
-                res = await http_client.post(url, json=payload)
-                if res.status_code == 200:
-                    data = res.json()
-                    candidates = data.get("candidates", [])
-                    if candidates and "content" in candidates[0]:
-                        parts = candidates[0]["content"].get("parts", [])
-                        if parts:
-                            return parts[0].get("text", "").strip()
-                logger.warning(f"Gemini API returned status {res.status_code}: {res.text}")
-            except Exception as e:
-                logger.error(f"Error calling Gemini: {e}")
-
-        # 3. OpenAI
-        if openai_key:
-            try:
-                url = "https://api.openai.com/v1/chat/completions"
-                messages = []
-                if system_instruction:
-                    messages.append({"role": "system", "content": system_instruction})
-                messages.append({"role": "user", "content": prompt})
-                payload = {
-                    "model": default_model if ("gpt" in default_model) else "gpt-4o-mini",
-                    "messages": messages,
-                    "temperature": float(settings.get("temperature", 0.2)),
-                }
-                res = await http_client.post(
-                    url, headers={"Authorization": f"Bearer {openai_key}"}, json=payload
-                )
-                if res.status_code == 200:
-                    data = res.json()
-                    return data["choices"][0]["message"]["content"].strip()
-            except Exception as e:
-                logger.error(f"Error calling OpenAI: {e}")
-
-        # 4. Local NIM / Ollama / vLLM Endpoint
-        endpoint = nim_endpoint if nim_endpoint else ollama_endpoint
-        if endpoint and ("http" in endpoint) and ("integrate.api.nvidia.com" not in endpoint):
-            try:
-                url = f"{endpoint.rstrip('/')}/chat/completions"
-                payload = {
-                    "model": default_model,
-                    "messages": [{"role": "user", "content": f"{system_instruction}\n\n{prompt}"}],
-                    "temperature": float(settings.get("temperature", 0.2)),
-                }
-                res = await http_client.post(url, json=payload)
-                if res.status_code == 200:
-                    data = res.json()
-                    return data["choices"][0]["message"]["content"].strip()
-            except Exception:
-                pass
-
-    # Honest deterministic fallback when credentials are not configured
-    return (
-        f"Objective Executed: '{prompt}'.\n"
-        f"Output: Strategic parameters synthesized, operational boundaries verified, and deliverables staged for review.\n"
-        f"[Notice: No active LLM API Key was configured. To enable live neural reasoning, configure NVIDIA NIM, Gemini, or OpenAI API Key in Settings.]"
-    )
+        model = context.get("model", "gemini-1.5-pro")
+        return await self.provider.call(messages, model)
 
 
 async def execute_task(
@@ -216,9 +91,42 @@ async def execute_task(
         {"from": creator_role, "to": agent_id, "task": task_title, "task_id": str(task.id)},
     )
 
-    # 4. Call Model Provider with agent persona
-    system_instruction = f"You are the {agent.role} of CompanyOS. Perform this task with high precision and executive clarity."
-    result_text = await call_model_provider(settings, task_title, system_instruction)
+    # 4. Initialize Provider and Execute Task
+    nvidia_key = settings.get("nvidia_api_key", "").strip() or os.getenv("NVIDIA_API_KEY", "")
+    nim_endpoint = (
+        settings.get("nvidia_nim_endpoint", "").strip() or "https://integrate.api.nvidia.com/v1"
+    )
+    gemini_key = settings.get("gemini_api_key", "").strip()
+    openai_key = settings.get("openai_api_key", "").strip()
+    ollama_endpoint = settings.get("ollama_vllm_url", "").strip()
+    default_model = settings.get("default_model", "gemini-1.5-pro")
+
+    provider = None
+    if nvidia_key or ("integrate.api.nvidia.com" in nim_endpoint and nvidia_key):
+        provider = OpenAIProvider(api_key=nvidia_key, base_url=nim_endpoint.rstrip("/"))
+        if "/" not in default_model:
+            default_model = "nvidia/nemotron-3-ultra-550b-a55b"
+    elif gemini_key:
+        provider = GeminiProvider(api_key=gemini_key)
+        if "pro" not in default_model and "flash" not in default_model:
+            default_model = "gemini-1.5-pro"
+    elif openai_key:
+        provider = OpenAIProvider(api_key=openai_key)
+        if "gpt" not in default_model:
+            default_model = "gpt-4o-mini"
+    elif ollama_endpoint:
+        provider = OpenAIProvider(api_key="ollama", base_url=f"{ollama_endpoint.rstrip('/')}/v1")
+
+    if provider:
+        runtime = NativeRuntime(provider=provider)
+        context = {"model": default_model}
+        result_text = await runtime.execute(agent, task_title, context)
+    else:
+        result_text = (
+            f"Objective Executed: '{task_title}'.\n"
+            f"Output: Strategic parameters synthesized, operational boundaries verified, and deliverables staged for review.\n"
+            f"[Notice: No active LLM API Key was configured.]"
+        )
 
     # 5. Mark Task Completed and Agent IDLE
     task.status = "COMPLETED"

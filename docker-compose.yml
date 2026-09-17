@@ -22,5 +22,15 @@ services:
     ports:
       - "6380:6379"
 
+  temporal:
+    image: temporalio/admin-tools:latest
+    ports:
+      - "7233:7233"
+      - "8233:8233"
+    command: temporal server start-dev --ip 0.0.0.0
+    depends_on:
+      - db
+      - redis
+
 volumes:
   postgres_data:

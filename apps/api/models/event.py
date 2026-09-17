@@ -15,8 +15,13 @@ class Event(Base):
     agent_id = Column(UUID(as_uuid=True), ForeignKey("agents.id"), nullable=True)
     task_id = Column(UUID(as_uuid=True), ForeignKey("tasks.id"), nullable=True)
 
-    event_type = Column(String, index=True, nullable=False)  # e.g., TaskCreated, AgentStarted
+    event_type = Column(String, index=True, nullable=False)
     payload = Column(JSON, default=dict)
+
+    correlation_id = Column(UUID(as_uuid=True), nullable=True)
+    causation_id = Column(UUID(as_uuid=True), nullable=True)
+    source = Column(String, nullable=True)
+    actor_type = Column(String, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
@@ -26,8 +31,8 @@ class AuditLog(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
-    actor_id = Column(UUID(as_uuid=True), nullable=False)  # Can be user_id or agent_id
-    actor_type = Column(String, nullable=False)  # USER, AGENT
+    actor_id = Column(UUID(as_uuid=True), nullable=False)
+    actor_type = Column(String, nullable=False)
 
     action = Column(String, nullable=False)
     resource = Column(String, nullable=False)
